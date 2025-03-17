@@ -38,6 +38,76 @@
 			android:text="保存" />
 	</LinearLayout>
 
+	<!-- 时间区间布局 -->
+	<LinearLayout
+		android:id="@+id/timeRangeContainer"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:orientation="vertical"
+		android:padding="8dp">
+
+		<LinearLayout
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:orientation="horizontal">
+
+			<TextView
+				android:layout_width="wrap_content"
+				android:layout_height="wrap_content"
+				android:text="开始: " />
+
+			<TextView
+				android:id="@+id/startTimeText"
+				android:layout_width="0dp"
+				android:layout_height="wrap_content"
+				android:layout_weight="1"
+				android:background="@drawable/simple_background"
+				android:padding="8dp"
+				android:text="点击选择" />
+
+			<TextView
+				android:layout_width="wrap_content"
+				android:layout_height="wrap_content"
+				android:text=" 结束: " />
+
+			<TextView
+				android:id="@+id/endTimeText"
+				android:layout_width="0dp"
+				android:layout_height="wrap_content"
+				android:layout_weight="1"
+				android:background="@drawable/simple_background"
+				android:padding="8dp"
+				android:text="点击选择" />
+		</LinearLayout>
+	</LinearLayout>
+
+	<!-- 标签布局 -->
+	<LinearLayout
+		android:id="@+id/tagContainer"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:orientation="vertical"
+		android:padding="8dp">
+
+		<!-- 已有标签显示区域 -->
+		<com.google.android.material.chip.ChipGroup
+			android:id="@+id/tagChipGroup"
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content" />
+
+		<!-- 添加标签按钮 -->
+		<Button
+			android:id="@+id/addTagButton"
+			android:layout_width="wrap_content"
+			android:layout_height="40dp"
+			android:layout_marginTop="4dp"
+			android:text="添加标签"
+			android:textSize="14sp"
+			android:minWidth="0dp"
+			android:paddingStart="12dp"
+			android:paddingEnd="12dp" />
+	</LinearLayout>
+
 	<ListView
 		android:id="@+id/momentsListView"
 		android:layout_width="match_parent"
