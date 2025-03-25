@@ -1,13 +1,20 @@
 package person.notfresh.noteplus;
 
+import android.annotation.SuppressLint;
 import android.app.DatePickerDialog;
+import android.app.ProgressDialog;
 import android.app.TimePickerDialog;
 import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Color;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
+import android.provider.MediaStore;
+import android.provider.Settings;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -26,10 +33,22 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.PopupMenu;
 import androidx.appcompat.widget.Toolbar;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+import androidx.core.content.FileProvider;
 
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -41,6 +60,24 @@ import java.util.Random;
 import person.notfresh.noteplus.db.NoteDbHelper;
 import person.notfresh.noteplus.db.ProjectContextManager;
 import person.notfresh.noteplus.model.Tag;
+import android.Manifest;
+import android.content.ActivityNotFoundException;
+import android.content.ContentResolver;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.net.Uri;
+import android.os.Environment;
+import android.provider.MediaStore;
+import androidx.annotation.NonNull;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 
 public class MainActivity extends AppCompatActivity {
     private EditText momentEditText;
@@ -71,6 +108,9 @@ public class MainActivity extends AppCompatActivity {
 
     // 添加项目管理器
     private ProjectContextManager projectManager;
+
+    // 添加权限常量
+    private static final int PERMISSION_REQUEST_WRITE_STORAGE = 1001;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -242,7 +282,7 @@ public class MainActivity extends AppCompatActivity {
             tagsCursor.moveToPosition(position);
             long tagId = tagsCursor.getLong(tagsCursor.getColumnIndexOrThrow("_id"));
             String tagName = tagsCursor.getString(tagsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TAG_NAME));
-            String tagColor = tagsCursor.getString(tagsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TAG_COLOR));
+            @SuppressLint("Range") String tagColor = tagsCursor.getString(tagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_COLOR));
             
             Tag tag = new Tag(tagId, tagName, tagColor);
             addTagChip(tag);
@@ -386,26 +426,27 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * 加载所有时刻记录
+     * 加载已有记录
      */
     private void loadMoments() {
         SQLiteDatabase db = dbHelper.getReadableDatabase();
         Cursor cursor = db.query(
                 NoteDbHelper.TABLE_NOTES,
-                new String[]{NoteDbHelper.COLUMN_ID, NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP},
+                new String[]{"_id", NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP},
                 null, null, null, null,
-                NoteDbHelper.COLUMN_TIMESTAMP + " DESC" // 按时间戳倒序排列
+                NoteDbHelper.COLUMN_TIMESTAMP + " DESC"
         );
 
-        String[] fromColumns = {NoteDbHelper.COLUMN_TIMESTAMP, NoteDbHelper.COLUMN_CONTENT};
-        int[] toViews = {R.id.timestampText, R.id.contentText};
+        // 使用应用中实际存在的资源ID
+        String[] from = new String[]{NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP};
+        int[] to = new int[]{R.id.contentText, R.id.timestampText};
 
         adapter = new SimpleCursorAdapter(
                 this,
-                R.layout.note_list_item,
+                R.layout.note_list_item, // 使用已有的布局
                 cursor,
-                fromColumns,
-                toViews,
+                from,
+                to,
                 0
         ) {
             @Override
@@ -414,7 +455,7 @@ public class MainActivity extends AppCompatActivity {
                 
                 // 获取当前记录ID
                 Cursor cursor = (Cursor) getItem(position);
-                long noteId = cursor.getLong(cursor.getColumnIndex(NoteDbHelper.COLUMN_ID));
+                long noteId = cursor.getLong(cursor.getColumnIndexOrThrow("_id"));
                 
                 // 为列表项添加时间区间和标签信息
                 updateListItemWithExtras(view, noteId);
@@ -425,7 +466,7 @@ public class MainActivity extends AppCompatActivity {
 
         // 设置时间戳格式
         adapter.setViewBinder((view, cursor1, columnIndex) -> {
-            if (columnIndex == cursor1.getColumnIndex(NoteDbHelper.COLUMN_TIMESTAMP)) {
+            if (columnIndex == cursor1.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TIMESTAMP)) {
                 long timestamp = cursor1.getLong(columnIndex);
                 String formattedDate = formatTimestamp(timestamp);
                 ((TextView) view).setText(formattedDate);
@@ -584,6 +625,12 @@ public class MainActivity extends AppCompatActivity {
         if (dbHelper != null) {
             dbHelper.close();
         }
+        // 即使closeAll()不可用，也确保正确关闭数据库
+        if (projectManager != null) {
+            // 暂时的解决方案，不调用closeAll
+            // 代替的方法是切换到默认项目，这会确保当前数据库关闭
+            projectManager.switchToProject("default");
+        }
     }
 
     /**
@@ -592,7 +639,7 @@ public class MainActivity extends AppCompatActivity {
     private void updateTitle() {
         if (getSupportActionBar() != null) {
             String currentProject = projectManager.getCurrentProject();
-            getSupportActionBar().setTitle("时间戳记录 - " + currentProject);
+            getSupportActionBar().setTitle("时间记录 - " + currentProject);
         }
     }
     
@@ -609,22 +656,22 @@ public class MainActivity extends AppCompatActivity {
         if (id == R.id.action_switch_project) {
             showProjectMenu(findViewById(R.id.action_switch_project));
             return true;
+        } else if (id == R.id.action_export_data) {
+            showExportDialog();
+            return true;
         }
         
         return super.onOptionsItemSelected(item);
     }
     
     /**
-     * 显示项目菜单
+     * 显示项目菜单 - 简化版
      */
     private void showProjectMenu(View view) {
         PopupMenu popup = new PopupMenu(this, view);
         Menu menu = popup.getMenu();
         
-        // 添加"新建项目"选项
-        menu.add(Menu.NONE, -1, Menu.NONE, "新建项目...");
-        
-        // 添加现有项目
+        // 添加所有项目到菜单
         List<String> projects = projectManager.getProjectList();
         for (int i = 0; i < projects.size(); i++) {
             String project = projects.get(i);
@@ -632,22 +679,18 @@ public class MainActivity extends AppCompatActivity {
             
             // 标记当前项目
             if (project.equals(projectManager.getCurrentProject())) {
-                MenuItem item = menu.getItem(i + 1); // +1是因为"新建项目"
+                MenuItem item = menu.getItem(i);
                 item.setTitle("✓ " + project);
             }
         }
         
-        // 添加项目管理选项
-        menu.add(Menu.NONE, -2, Menu.NONE, "管理项目...");
+        // 添加管理选项到底部
+        menu.add(Menu.NONE, -1, Menu.NONE, "项目管理...");
         
         popup.setOnMenuItemClickListener(item -> {
             int itemId = item.getItemId();
             
             if (itemId == -1) {
-                // 创建新项目
-                showCreateProjectDialog();
-                return true;
-            } else if (itemId == -2) {
                 // 打开项目管理界面
                 showProjectManagementDialog();
                 return true;
@@ -655,6 +698,12 @@ public class MainActivity extends AppCompatActivity {
             
             // 切换到选择的项目
             String selectedProject = projects.get(itemId);
+            
+            // 如果点击的是当前项目，不执行切换
+            if (selectedProject.equals(projectManager.getCurrentProject())) {
+                return true;
+            }
+            
             switchProject(selectedProject);
             return true;
         });
@@ -666,45 +715,76 @@ public class MainActivity extends AppCompatActivity {
      * 显示项目管理对话框
      */
     private void showProjectManagementDialog() {
-        List<String> projects = projectManager.getProjectList();
-        String[] items = projects.toArray(new String[0]);
-        
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("管理项目");
+        builder.setTitle("项目管理");
         
-        builder.setItems(items, (dialog, which) -> {
-            String selectedProject = projects.get(which);
-            showProjectOptionsDialog(selectedProject);
+        // 创建一个带图标的列表项
+        String[] options = new String[]{"创建新项目", "重命名项目", "删除项目", "回收站"};
+        
+        builder.setItems(options, (dialog, which) -> {
+            switch (which) {
+                case 0: // 创建新项目
+                    showCreateProjectDialog();
+                    break;
+                case 1: // 重命名项目
+                    showSelectProjectForRename();
+                    break;
+                case 2: // 删除项目
+                    showSelectProjectForDelete();
+                    break;
+                case 3: // 回收站
+                    showRecycleBinDialog();
+                    break;
+            }
         });
         
-        builder.setNeutralButton("取消", null);
-        
+        builder.setNegativeButton("取消", null);
         builder.show();
     }
     
     /**
-     * 显示项目操作选项对话框
+     * 显示选择要重命名的项目对话框
      */
-    private void showProjectOptionsDialog(String projectName) {
-        // 默认项目不允许删除
-        boolean isDefaultProject = "default".equals(projectName);
-        
-        String[] options = isDefaultProject ? 
-                new String[]{"重命名"} : 
-                new String[]{"重命名", "删除"};
+    private void showSelectProjectForRename() {
+        List<String> projects = projectManager.getProjectList();
+        String[] items = projects.toArray(new String[0]);
         
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle(projectName);
-        builder.setItems(options, (dialog, which) -> {
-            if (which == 0) {
-                // 重命名
-                showRenameProjectDialog(projectName);
-            } else if (which == 1 && !isDefaultProject) {
-                // 删除
-                showDeleteProjectConfirmation(projectName);
-            }
+        builder.setTitle("选择要重命名的项目");
+        
+        builder.setItems(items, (dialog, which) -> {
+            String selectedProject = projects.get(which);
+            showRenameProjectDialog(selectedProject);
         });
         
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
+    
+    /**
+     * 显示选择要删除的项目对话框
+     */
+    private void showSelectProjectForDelete() {
+        List<String> projects = new ArrayList<>(projectManager.getProjectList());
+        // 移除默认项目，防止被删除
+        projects.remove("default");
+        
+        if (projects.isEmpty()) {
+            Toast.makeText(this, "没有可删除的项目", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        String[] items = projects.toArray(new String[0]);
+        
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("选择要删除的项目");
+        
+        builder.setItems(items, (dialog, which) -> {
+            String selectedProject = projects.get(which);
+            showDeleteProjectConfirmation(selectedProject);
+        });
+        
+        builder.setNegativeButton("取消", null);
         builder.show();
     }
     
@@ -744,17 +824,48 @@ public class MainActivity extends AppCompatActivity {
     private void showDeleteProjectConfirmation(String projectName) {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("删除项目");
-        builder.setMessage("确定要删除项目 \"" + projectName + "\" 吗？此操作不可恢复。");
+        builder.setMessage("确定要删除项目 \"" + projectName + "\" 吗？项目将被移至回收站。");
         
         builder.setPositiveButton("删除", (dialog, which) -> {
-            if (projectManager.deleteProject(projectName)) {
-                Toast.makeText(this, "项目已删除", Toast.LENGTH_SHORT).show();
-                updateTitle();
-                clearForm();
-                loadMoments();
-            } else {
-                Toast.makeText(this, "删除失败", Toast.LENGTH_SHORT).show();
-            }
+            // 显示进度对话框
+            ProgressDialog progressDialog = new ProgressDialog(this);
+            progressDialog.setMessage("正在删除项目...");
+            progressDialog.setCancelable(false);
+            progressDialog.show();
+            
+            // 在后台线程中执行删除操作
+            new Thread(() -> {
+                boolean success = projectManager.moveProjectToRecycleBin(projectName);
+                
+                // 返回UI线程处理结果
+                runOnUiThread(() -> {
+                    progressDialog.dismiss();
+                    
+                    if (success) {
+                        Toast.makeText(this, "项目已移至回收站", Toast.LENGTH_SHORT).show();
+                        updateTitle();
+                        clearForm();
+                        
+                        try {
+                            // 安全地重新加载数据
+                            loadMoments();
+                        } catch (Exception e) {
+                            // 如果加载失败，重新初始化数据库连接
+                            e.printStackTrace();
+                            Toast.makeText(this, "正在恢复...", Toast.LENGTH_SHORT).show();
+                            
+                            // 重新初始化数据库连接
+                            if (dbHelper != null) {
+                                dbHelper.close();
+                            }
+                            dbHelper = projectManager.getCurrentDbHelper();
+                            loadMoments();
+                        }
+                    } else {
+                        Toast.makeText(this, "删除失败，请重试", Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }).start();
         });
         
         builder.setNegativeButton("取消", (dialog, which) -> dialog.cancel());
@@ -793,27 +904,497 @@ public class MainActivity extends AppCompatActivity {
      * 切换到指定项目
      */
     private void switchProject(String projectName) {
-        if (projectManager.switchToProject(projectName)) {
-            // 1. 关闭当前数据库连接
-            if (dbHelper != null) {
-                dbHelper.close();
+        // 显示加载指示器
+        ProgressDialog progressDialog = new ProgressDialog(this);
+        progressDialog.setMessage("正在切换项目...");
+        progressDialog.setCancelable(false);
+        progressDialog.show();
+        
+        // 使用后台线程处理数据库操作
+        new Thread(() -> {
+            if (projectManager.switchToProject(projectName)) {
+                // 数据库操作放在后台线程中执行
+                if (dbHelper != null) {
+                    dbHelper.close();
+                }
+                dbHelper = projectManager.getCurrentDbHelper();
+                
+                // 回到主线程更新UI
+                runOnUiThread(() -> {
+                    updateTitle();
+                    clearForm();
+                    
+                    // 加载数据前更新提示
+                    progressDialog.setMessage("正在加载数据...");
+                    
+                    // 再次使用后台线程加载数据
+                    new Thread(() -> {
+                        // 最后在UI线程中安全地加载
+                        runOnUiThread(() -> {
+                            loadMoments(); // 使用现有的加载方法
+                            progressDialog.dismiss();
+                            Toast.makeText(MainActivity.this, 
+                                    "已切换到项目：" + projectName, 
+                                    Toast.LENGTH_SHORT).show();
+                        });
+                    }).start();
+                });
+            } else {
+                runOnUiThread(() -> {
+                    progressDialog.dismiss();
+                    Toast.makeText(MainActivity.this, 
+                            "切换项目失败", 
+                            Toast.LENGTH_SHORT).show();
+                });
             }
-            
-            // 2. 获取新项目的数据库Helper
-            dbHelper = projectManager.getCurrentDbHelper();
-            
-            // 3. 更新标题
-            updateTitle();
-            
-            // 4. 清空当前界面状态
-            clearForm();
-            
-            // 5. 重新加载数据
-            loadMoments();
-            
-            Toast.makeText(this, "已切换到项目：" + projectName, Toast.LENGTH_SHORT).show();
-        } else {
-            Toast.makeText(this, "切换项目失败", Toast.LENGTH_SHORT).show();
+        }).start();
+    }
+
+    /**
+     * 显示回收站对话框
+     */
+    private void showRecycleBinDialog() {
+        List<String> recycledProjects = projectManager.getRecycledProjects();
+        
+        if (recycledProjects.isEmpty()) {
+            Toast.makeText(this, "回收站为空", Toast.LENGTH_SHORT).show();
+            return;
         }
+        
+        String[] items = recycledProjects.toArray(new String[0]);
+        
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("回收站");
+        
+        builder.setItems(items, (dialog, which) -> {
+            String selectedProject = recycledProjects.get(which);
+            showRecycleBinItemOptionsDialog(selectedProject);
+        });
+        
+        builder.setPositiveButton("清空回收站", (dialog, which) -> {
+            showEmptyRecycleBinConfirmation();
+        });
+        
+        builder.setNegativeButton("关闭", null);
+        builder.show();
+    }
+
+    /**
+     * 显示回收站项目操作选项对话框
+     */
+    private void showRecycleBinItemOptionsDialog(String projectName) {
+        String[] options = new String[]{"恢复项目", "永久删除"};
+        
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle(projectName);
+        
+        builder.setItems(options, (dialog, which) -> {
+            if (which == 0) {
+                // 恢复项目
+                if (projectManager.restoreProjectFromRecycleBin(projectName)) {
+                    Toast.makeText(this, "项目已恢复", Toast.LENGTH_SHORT).show();
+                } else {
+                    Toast.makeText(this, "恢复失败", Toast.LENGTH_SHORT).show();
+                }
+            } else if (which == 1) {
+                // 永久删除
+                showPermanentDeleteConfirmation(projectName);
+            }
+        });
+        
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
+
+    /**
+     * 显示永久删除确认对话框
+     */
+    private void showPermanentDeleteConfirmation(String projectName) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("永久删除");
+        builder.setMessage("确定要永久删除项目 \"" + projectName + "\" 吗？此操作不可恢复。");
+        
+        builder.setPositiveButton("删除", (dialog, which) -> {
+            // 显示进度对话框
+            ProgressDialog progressDialog = new ProgressDialog(this);
+            progressDialog.setMessage("正在删除...");
+            progressDialog.setCancelable(false);
+            progressDialog.show();
+            
+            // 在后台线程中执行操作
+            new Thread(() -> {
+                boolean success = projectManager.permanentlyDeleteProject(projectName);
+                
+                runOnUiThread(() -> {
+                    progressDialog.dismiss();
+                    
+                    if (success) {
+                        Toast.makeText(this, "项目已永久删除", Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(this, "删除失败", Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }).start();
+        });
+        
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
+
+    /**
+     * 显示清空回收站确认对话框
+     */
+    private void showEmptyRecycleBinConfirmation() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("清空回收站");
+        builder.setMessage("确定要清空回收站吗？此操作将永久删除所有回收站中的项目。");
+        
+        builder.setPositiveButton("清空", (dialog, which) -> {
+            // 显示进度对话框
+            ProgressDialog progressDialog = new ProgressDialog(this);
+            progressDialog.setMessage("正在清空回收站...");
+            progressDialog.setCancelable(false);
+            progressDialog.show();
+            
+            // 在后台线程中执行操作
+            new Thread(() -> {
+                boolean success = projectManager.emptyRecycleBin();
+                
+                runOnUiThread(() -> {
+                    progressDialog.dismiss();
+                    
+                    if (success) {
+                        Toast.makeText(this, "回收站已清空", Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(this, "操作部分失败", Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }).start();
+        });
+        
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
+
+    /**
+     * 显示导出选项对话框
+     */
+    private void showExportDialog() {
+        String[] exportOptions = new String[]{"导出为CSV", "导出为JSON"};
+        
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("选择导出格式");
+        builder.setItems(exportOptions, (dialog, which) -> {
+            String format = exportOptions[which];
+            // 检查并请求存储权限
+            if (checkStoragePermission()) {
+                exportData(format);
+            } else {
+                requestStoragePermission();
+            }
+        });
+        
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
+
+    /**
+     * 检查存储权限
+     */
+    private boolean checkStoragePermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Android 10及以上使用作用域存储，不需要请求WRITE_EXTERNAL_STORAGE权限
+            return true;
+        } else {
+            return ContextCompat.checkSelfPermission(this,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+        }
+    }
+
+    /**
+     * 请求存储权限
+     */
+    private void requestStoragePermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},
+                    PERMISSION_REQUEST_WRITE_STORAGE);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == PERMISSION_REQUEST_WRITE_STORAGE) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                // 权限获取成功，可以导出
+                showExportDialog();
+            } else {
+                Toast.makeText(this, "需要存储权限才能导出数据", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    /**
+     * 导出数据
+     */
+    private void exportData(String format) {
+        String fileName;
+        String mimeType;
+        String fileExtension = "";
+        
+        if (format.contains("CSV")) {
+            fileName = projectManager.getCurrentProject() + "_export.csv";
+            mimeType = "text/csv";
+            fileExtension = ".csv";
+        } else if (format.contains("JSON")) {
+            fileName = projectManager.getCurrentProject() + "_export.json";
+            mimeType = "application/json";
+            fileExtension = ".json";
+        } else {
+            mimeType = "";
+            fileName = "";
+        }
+
+        // 显示进度对话框
+        ProgressDialog progressDialog = new ProgressDialog(this);
+        progressDialog.setMessage("正在导出数据...");
+        progressDialog.setCancelable(false);
+        progressDialog.show();
+        
+        // 在后台线程执行导出操作
+        new Thread(() -> {
+            boolean success = false;
+            Uri fileUri = null;
+            
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    // 使用作用域存储 (Android 10+)
+                    ContentValues values = new ContentValues();
+                    values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
+                    values.put(MediaStore.MediaColumns.MIME_TYPE, mimeType);
+                    values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOCUMENTS);
+                    
+                    ContentResolver resolver = getContentResolver();
+                    fileUri = resolver.insert(MediaStore.Files.getContentUri("external"), values);
+                    
+                    if (fileUri != null) {
+                        OutputStream outputStream = resolver.openOutputStream(fileUri);
+                        if (outputStream != null) {
+                            // 写入数据
+                            if (format.contains("CSV")) {
+                                writeCsvData(outputStream);
+                            } else {
+                                writeJsonData(outputStream);
+                            }
+                            outputStream.close();
+                            success = true;
+                        }
+                    }
+                } else {
+                    // 使用传统文件存储 (Android 9 及以下)
+                    File documentsFolder = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS);
+                    if (!documentsFolder.exists()) {
+                        documentsFolder.mkdirs();
+                    }
+                    
+                    File outputFile = new File(documentsFolder, fileName);
+                    FileOutputStream fos = new FileOutputStream(outputFile);
+                    
+                    // 写入数据
+                    if (format.contains("CSV")) {
+                        writeCsvData(fos);
+                    } else {
+                        writeJsonData(fos);
+                    }
+                    
+                    fos.close();
+                    fileUri = Uri.fromFile(outputFile);
+                    success = true;
+                }
+                
+                final Uri finalFileUri = fileUri;
+                final boolean finalSuccess = success;
+                
+                // 在UI线程中更新界面
+                runOnUiThread(() -> {
+                    progressDialog.dismiss();
+                    
+                    if (finalSuccess) {
+                        showExportSuccessDialog(format, finalFileUri);
+                    } else {
+                        Toast.makeText(MainActivity.this, "导出失败，请重试", Toast.LENGTH_SHORT).show();
+                    }
+                });
+                
+            } catch (Exception e) {
+                e.printStackTrace();
+                runOnUiThread(() -> {
+                    progressDialog.dismiss();
+                    Toast.makeText(MainActivity.this, "导出错误: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
+            }
+        }).start();
+    }
+
+    /**
+     * 显示导出成功对话框
+     */
+    private void showExportSuccessDialog(String format, Uri fileUri) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("导出成功");
+        builder.setMessage("数据已成功导出为" + format + "格式");
+        
+        builder.setPositiveButton("打开文件", (dialog, which) -> {
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(fileUri, format.contains("CSV") ? "text/csv" : "application/json");
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            
+            try {
+                startActivity(intent);
+            } catch (ActivityNotFoundException e) {
+                Toast.makeText(this, "没有找到可以打开此类文件的应用", Toast.LENGTH_SHORT).show();
+            }
+        });
+        
+        builder.setNegativeButton("确定", null);
+        builder.show();
+    }
+
+    /**
+     * 写入CSV数据
+     */
+    private void writeCsvData(OutputStream outputStream) throws IOException {
+        SQLiteDatabase db = dbHelper.getReadableDatabase();
+        
+        // 获取所有记录
+        Cursor notesCursor = db.query(
+                NoteDbHelper.TABLE_NOTES,
+                new String[]{"_id", NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP},
+                null, null, null, null,
+                NoteDbHelper.COLUMN_TIMESTAMP + " DESC"
+        );
+        
+        OutputStreamWriter writer = new OutputStreamWriter(outputStream);
+        
+        // 写入CSV头
+        writer.write("ID,内容,时间戳,开始时间,结束时间,标签\n");
+        
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+        
+        // 写入记录
+        while (notesCursor.moveToNext()) {
+            long noteId = notesCursor.getLong(notesCursor.getColumnIndexOrThrow("_id"));
+            String content = notesCursor.getString(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_CONTENT));
+            long timestamp = notesCursor.getLong(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TIMESTAMP));
+            
+            // 处理CSV中的特殊字符
+            content = "\"" + content.replace("\"", "\"\"") + "\"";
+            
+            StringBuilder line = new StringBuilder();
+            line.append(noteId).append(",");
+            line.append(content).append(",");
+            line.append(sdf.format(new Date(timestamp))).append(",");
+            
+            // 获取时间范围
+            Cursor timeRangeCursor = dbHelper.getTimeRangesForNote(noteId);
+            if (timeRangeCursor.moveToFirst()) {
+                long startTime = timeRangeCursor.getLong(timeRangeCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_START_TIME));
+                long endTime = timeRangeCursor.getLong(timeRangeCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_END_TIME));
+                line.append(sdf.format(new Date(startTime))).append(",");
+                line.append(sdf.format(new Date(endTime))).append(",");
+            } else {
+                line.append(",,");
+            }
+            timeRangeCursor.close();
+            
+            // 获取标签
+            Cursor tagsCursor = dbHelper.getTagsForNote(noteId);
+            StringBuilder tags = new StringBuilder();
+            while (tagsCursor.moveToNext()) {
+                if (tags.length() > 0) {
+                    tags.append(";");
+                }
+                tags.append(tagsCursor.getString(tagsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TAG_NAME)));
+            }
+            line.append("\"").append(tags).append("\"");
+            tagsCursor.close();
+            
+            writer.write(line.toString() + "\n");
+        }
+        
+        notesCursor.close();
+        writer.flush();
+    }
+
+    /**
+     * 写入JSON数据
+     */
+    private void writeJsonData(OutputStream outputStream) throws IOException, JSONException {
+        SQLiteDatabase db = dbHelper.getReadableDatabase();
+        
+        // 获取所有记录
+        Cursor notesCursor = db.query(
+                NoteDbHelper.TABLE_NOTES,
+                new String[]{"_id", NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP},
+                null, null, null, null,
+                NoteDbHelper.COLUMN_TIMESTAMP + " DESC"
+        );
+        
+        JSONArray notesArray = new JSONArray();
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+        
+        // 构建记录
+        while (notesCursor.moveToNext()) {
+            JSONObject noteObject = new JSONObject();
+            
+            long noteId = notesCursor.getLong(notesCursor.getColumnIndexOrThrow("_id"));
+            String content = notesCursor.getString(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_CONTENT));
+            long timestamp = notesCursor.getLong(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TIMESTAMP));
+            
+            noteObject.put("id", noteId);
+            noteObject.put("content", content);
+            noteObject.put("timestamp", sdf.format(new Date(timestamp)));
+            
+            // 获取时间范围
+            Cursor timeRangeCursor = dbHelper.getTimeRangesForNote(noteId);
+            if (timeRangeCursor.moveToFirst()) {
+                JSONObject timeRange = new JSONObject();
+                long startTime = timeRangeCursor.getLong(timeRangeCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_START_TIME));
+                long endTime = timeRangeCursor.getLong(timeRangeCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_END_TIME));
+                
+                timeRange.put("start", sdf.format(new Date(startTime)));
+                timeRange.put("end", sdf.format(new Date(endTime)));
+                noteObject.put("timeRange", timeRange);
+            }
+            timeRangeCursor.close();
+            
+            // 获取标签
+            Cursor tagsCursor = dbHelper.getTagsForNote(noteId);
+            JSONArray tagsArray = new JSONArray();
+            while (tagsCursor.moveToNext()) {
+                JSONObject tagObject = new JSONObject();
+                tagObject.put("name", tagsCursor.getString(tagsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TAG_NAME)));
+                tagObject.put("color", tagsCursor.getString(tagsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TAG_COLOR)));
+                tagsArray.put(tagObject);
+            }
+            tagsCursor.close();
+            
+            noteObject.put("tags", tagsArray);
+            notesArray.put(noteObject);
+        }
+        
+        notesCursor.close();
+        
+        // 创建根JSON对象
+        JSONObject rootObject = new JSONObject();
+        rootObject.put("projectName", projectManager.getCurrentProject());
+        rootObject.put("exportDate", sdf.format(new Date()));
+        rootObject.put("notes", notesArray);
+        
+        // 写入数据
+        OutputStreamWriter writer = new OutputStreamWriter(outputStream);
+        writer.write(rootObject.toString(2)); // 格式化JSON输出
+        writer.flush();
     }
 } 

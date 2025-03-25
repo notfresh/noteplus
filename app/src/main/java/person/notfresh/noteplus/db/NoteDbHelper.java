@@ -139,4 +139,17 @@ public class NoteDbHelper extends SQLiteOpenHelper {
                 new String[]{String.valueOf(noteId)},
                 null, null, null);
     }
+
+    /**
+     * 获取所有记录
+     */
+    public Cursor getAllMoments() {
+        SQLiteDatabase db = this.getReadableDatabase();
+        return db.query(
+                TABLE_NOTES,
+                new String[]{"_id", COLUMN_CONTENT, COLUMN_TIMESTAMP},
+                null, null, null, null,
+                COLUMN_TIMESTAMP + " DESC"
+        );
+    }
 } 

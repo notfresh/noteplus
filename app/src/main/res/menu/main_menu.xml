@@ -6,4 +6,10 @@
         android:title="切换项目"
         android:icon="@drawable/ic_projects"
         app:showAsAction="always" />
+        
+    <item
+        android:id="@+id/action_export_data"
+        android:title="导出数据"
+        android:icon="@drawable/ic_export"
+        app:showAsAction="ifRoom" />
 </menu> 
