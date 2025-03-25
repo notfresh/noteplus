@@ -20,21 +20,41 @@
 		android:orientation="horizontal"
 		android:padding="8dp">
 
-		<EditText
-			android:id="@+id/momentEditText"
+		<LinearLayout
 			android:layout_width="0dp"
 			android:layout_height="wrap_content"
 			android:layout_weight="1"
-			android:hint="现在你在做什么?想什么?"
-			android:inputType="text"
-			android:maxLines="3"
-			android:padding="12dp" />
+			android:orientation="vertical">
+
+			<EditText
+				android:id="@+id/momentEditText"
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:hint="现在你在做什么?想什么?"
+				android:inputType="textMultiLine"
+				android:maxLines="3"
+				android:minLines="1"
+				android:padding="12dp" />
+		</LinearLayout>
+
+		<ImageButton
+			android:id="@+id/expandButton"
+			android:layout_width="32dp"
+			android:layout_height="32dp"
+			android:layout_gravity="top"
+			android:layout_marginStart="4dp"
+			android:layout_marginTop="8dp"
+			android:background="?attr/selectableItemBackgroundBorderless"
+			android:contentDescription="展开/收起输入框"
+			android:src="@drawable/ic_expand"
+			android:alpha="0.6"
+			android:tint="#757575" />
 
 		<Button
 			android:id="@+id/saveButton"
 			android:layout_width="wrap_content"
 			android:layout_height="wrap_content"
-			android:layout_marginStart="8dp"
+			android:layout_marginStart="4dp"
 			android:text="保存" />
 	</LinearLayout>
 

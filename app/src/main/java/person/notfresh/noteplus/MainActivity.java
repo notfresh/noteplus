@@ -23,6 +23,7 @@ import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.SimpleCursorAdapter;
@@ -78,6 +79,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import android.view.inputmethod.InputMethodManager;
 
 public class MainActivity extends AppCompatActivity {
     private EditText momentEditText;
@@ -111,6 +113,9 @@ public class MainActivity extends AppCompatActivity {
 
     // 添加权限常量
     private static final int PERMISSION_REQUEST_WRITE_STORAGE = 1001;
+
+    // 添加输入框展开/收起功能
+    private boolean isInputExpanded = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -168,6 +173,10 @@ public class MainActivity extends AppCompatActivity {
             }
             return false;
         });
+
+        // 添加输入框展开/收起功能
+        ImageButton expandButton = findViewById(R.id.expandButton);
+        expandButton.setOnClickListener(v -> toggleInputExpansion());
     }
 
     /**
@@ -1396,5 +1405,29 @@ public class MainActivity extends AppCompatActivity {
         OutputStreamWriter writer = new OutputStreamWriter(outputStream);
         writer.write(rootObject.toString(2)); // 格式化JSON输出
         writer.flush();
+    }
+
+    // 添加这个方法来处理输入框展开/收起
+    private void toggleInputExpansion() {
+        isInputExpanded = !isInputExpanded;
+        
+        // 更新输入框的最小行数
+        if (isInputExpanded) {
+            momentEditText.setMinLines(4);  // 展开为多行
+            momentEditText.setMaxLines(8);
+            // 将光标定位到文本末尾
+            momentEditText.setSelection(momentEditText.getText().length());
+            // 显示键盘
+            momentEditText.requestFocus();
+            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            imm.showSoftInput(momentEditText, InputMethodManager.SHOW_IMPLICIT);
+        } else {
+            momentEditText.setMinLines(1);  // 收起为单行
+            momentEditText.setMaxLines(3);
+        }
+        
+        // 更新按钮图标
+        ((ImageButton)findViewById(R.id.expandButton)).setImageResource(
+            isInputExpanded ? R.drawable.ic_collapse : R.drawable.ic_expand);
     }
 } 
