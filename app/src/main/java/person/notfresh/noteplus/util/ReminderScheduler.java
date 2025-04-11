@@ -12,14 +12,16 @@ import android.provider.Settings;
 import android.widget.Toast;
 
 import person.notfresh.noteplus.receiver.ReminderReceiver;
-import person.notfresh.noteplus.service.ReminderService;
 import person.notfresh.noteplus.work.ReminderWorker;
 
 public class ReminderScheduler {
     
     private static final String PREF_NAME = "reminder_prefs";
     private static final String KEY_REMINDER_ENABLED = "reminder_enabled";
-    private static final long REMINDER_INTERVAL = 10 * 60 * 1000; // 10分钟
+    private static final String KEY_REMINDER_INTERVAL = "reminder_interval";
+    private static final String KEY_NEXT_REMINDER_TIME = "next_reminder_time";
+    private static final long DEFAULT_REMINDER_INTERVAL = 10 * 60 * 1000; // 默认10分钟
+    private static final int MAX_MISSED_MINUTES = 5; // 最大错过分钟数
     
     /**
      * 开启定时提醒
@@ -48,12 +50,10 @@ public class ReminderScheduler {
             return;
         }
         
-        // 同时也使用WorkManager作为后备方案
-        ReminderWorker.scheduleReminder(context);
+        // 使用WorkManager作为主要提醒机制
+        ReminderWorker.scheduleReminder(context, getReminderInterval(context));
         
-        // 启动前台服务
-        startReminderService(context);
-        
+        // 设置AlarmManager作为备选
         scheduleNextReminder(context);
     }
     
@@ -64,11 +64,8 @@ public class ReminderScheduler {
         SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
         prefs.edit().putBoolean(KEY_REMINDER_ENABLED, false).apply();
         
-        // 同时取消WorkManager调度
+        // 取消WorkManager调度
         ReminderWorker.cancelReminder(context);
-        
-        // 停止前台服务
-        stopReminderService(context);
         
         // 取消闹钟
         AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
@@ -80,6 +77,28 @@ public class ReminderScheduler {
         // 取消已有通知
         NotificationHelper notificationHelper = new NotificationHelper(context);
         notificationHelper.cancelNotification(1001);
+    }
+    
+    /**
+     * 获取提醒时间间隔（毫秒）
+     */
+    public static long getReminderInterval(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        return prefs.getLong(KEY_REMINDER_INTERVAL, DEFAULT_REMINDER_INTERVAL);
+    }
+    
+    /**
+     * 设置提醒时间间隔（毫秒）
+     */
+    public static void setReminderInterval(Context context, long intervalMillis) {
+        SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        prefs.edit().putLong(KEY_REMINDER_INTERVAL, intervalMillis).apply();
+        
+        // 如果提醒已启用，更新调度
+        if (isReminderEnabled(context)) {
+            ReminderWorker.scheduleReminder(context, intervalMillis);
+            scheduleNextReminder(context);
+        }
     }
     
     /**
@@ -111,17 +130,20 @@ public class ReminderScheduler {
         
         AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
         Intent intent = new Intent(context, ReminderReceiver.class);
+        intent.setAction("REMINDER_ALARM_" + System.currentTimeMillis()); // 添加唯一动作标识
         PendingIntent pendingIntent = PendingIntent.getBroadcast(
                 context, 0, intent, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         
-        long triggerTime = SystemClock.elapsedRealtime() + REMINDER_INTERVAL;
+        long intervalMillis = getReminderInterval(context);
+        long triggerTime = SystemClock.elapsedRealtime() + intervalMillis;
         
         try {
-            // 尝试设置精确闹钟
+            // 尝试设置精确闹钟，最优先使用最可靠的API
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !hasExactAlarmPermission(context)) {
-                // 如果没有精确闹钟权限，使用不精确的闹钟（可能会延迟）
+                // 没有精确闹钟权限时
                 alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerTime, pendingIntent);
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                // 使用最可靠的API，即使设备处于低功耗模式也能唤醒
                 alarmManager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, 
                         triggerTime, pendingIntent);
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
@@ -131,31 +153,15 @@ public class ReminderScheduler {
                 alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, 
                         triggerTime, pendingIntent);
             }
+            
+            // 记录下一次闹钟的时间
+            SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+            prefs.edit().putLong(KEY_NEXT_REMINDER_TIME, System.currentTimeMillis() + intervalMillis).apply();
+            
         } catch (SecurityException e) {
             // 捕获权限异常，降级使用不精确闹钟
             alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerTime, pendingIntent);
         }
-    }
-
-    /**
-     * 启动前台服务
-     */
-    public static void startReminderService(Context context) {
-        Intent serviceIntent = new Intent(context, ReminderService.class);
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startForegroundService(serviceIntent);
-        } else {
-            context.startService(serviceIntent);
-        }
-    }
-
-    /**
-     * 停止前台服务
-     */
-    public static void stopReminderService(Context context) {
-        Intent serviceIntent = new Intent(context, ReminderService.class);
-        context.stopService(serviceIntent);
     }
 
     /**
@@ -171,5 +177,34 @@ public class ReminderScheduler {
         if (pendingIntent == null) {
             scheduleNextReminder(context);
         }
+    }
+
+    /**
+     * 检查是否错过了提醒
+     */
+    public static boolean checkMissedReminder(Context context) {
+        if (!isReminderEnabled(context)) {
+            return false;
+        }
+        
+        SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        long nextReminderTime = prefs.getLong(KEY_NEXT_REMINDER_TIME, 0);
+        
+        // 如果预期的下一次提醒时间已过期，且超过了5分钟
+        if (nextReminderTime > 0 && System.currentTimeMillis() > nextReminderTime + (MAX_MISSED_MINUTES * 60 * 1000)) {
+            // 立即触发一次提醒，然后重新设置提醒计划
+            NotificationHelper notificationHelper = new NotificationHelper(context);
+            notificationHelper.showNotification(
+                    "错过的提醒",
+                    "您错过了之前的提醒，请记录一下当前活动",
+                    1001
+            );
+            
+            // 重新设置提醒
+            scheduleNextReminder(context);
+            return true;
+        }
+        
+        return false;
     }
 } 

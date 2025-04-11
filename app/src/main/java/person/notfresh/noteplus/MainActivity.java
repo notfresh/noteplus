@@ -84,6 +84,8 @@ import android.view.inputmethod.InputMethodManager;
 import person.notfresh.noteplus.util.NotificationHelper;
 import person.notfresh.noteplus.util.ReminderScheduler;
 import android.os.PowerManager;
+import android.widget.Spinner;
+import android.widget.ArrayAdapter;
 
 public class MainActivity extends AppCompatActivity {
     private EditText momentEditText;
@@ -205,6 +207,16 @@ public class MainActivity extends AppCompatActivity {
         if (ReminderScheduler.isReminderEnabled(this)) {
             ReminderScheduler.scheduleNextReminder(this);
             checkBatteryOptimizations(); // 检查电池优化设置
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        
+        // 检查是否错过了提醒
+        if (ReminderScheduler.isReminderEnabled(this)) {
+            ReminderScheduler.checkMissedReminder(this);
         }
     }
 
@@ -1606,7 +1618,7 @@ public class MainActivity extends AppCompatActivity {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("项目设置");
         
-        // 创建设置项目布局
+        // 创建设置对话框布局
         View settingsView = getLayoutInflater().inflate(R.layout.dialog_settings, null);
         builder.setView(settingsView);
         
@@ -1625,11 +1637,19 @@ public class MainActivity extends AppCompatActivity {
         String currentCostRequiredValue = dbHelper.getSetting(NoteDbHelper.KEY_COST_REQUIRED, "false");
         costRequiredSwitch.setChecked(Boolean.parseBoolean(currentCostRequiredValue));
         
-        // 添加定时提醒开关
+        // 找到提醒间隔输入框
+        EditText reminderIntervalEdit = settingsView.findViewById(R.id.editTextReminderInterval);
+
+        // 设置当前值
+        long currentIntervalMillis = ReminderScheduler.getReminderInterval(this);
+        int currentIntervalMinutes = (int) (currentIntervalMillis / (60 * 1000));
+        reminderIntervalEdit.setText(String.valueOf(currentIntervalMinutes));
+
+        // 定时提醒开关
         Switch reminderSwitch = settingsView.findViewById(R.id.switchReminder);
         reminderSwitch.setChecked(ReminderScheduler.isReminderEnabled(this));
         
-        // 保存按钮
+        // 保存按钮点击事件处理
         builder.setPositiveButton("保存", (dialog, which) -> {
             // 保存时间范围设置
             boolean isTimeRangeRequired = timeRangeRequiredSwitch.isChecked();
@@ -1643,46 +1663,31 @@ public class MainActivity extends AppCompatActivity {
             boolean isCostRequired = costRequiredSwitch.isChecked();
             dbHelper.saveSetting(NoteDbHelper.KEY_COST_REQUIRED, String.valueOf(isCostRequired));
             
+            // 读取提醒间隔设置
+            String intervalStr = reminderIntervalEdit.getText().toString().trim();
+            long intervalMinutes;
+            try {
+                intervalMinutes = Long.parseLong(intervalStr);
+                // 确保最小值为1分钟
+                if (intervalMinutes < 1) {
+                    intervalMinutes = 1;
+                }
+            } catch (NumberFormatException e) {
+                // 如果输入无效，使用默认值10分钟
+                intervalMinutes = 10;
+            }
+            
+            // 转换为毫秒并保存
+            long intervalMillis = intervalMinutes * 60 * 1000;
+            ReminderScheduler.setReminderInterval(this, intervalMillis);
+            
             // 保存定时提醒设置
             boolean enableReminder = reminderSwitch.isChecked();
             if (enableReminder) {
-                // 先检查权限
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !ReminderScheduler.hasExactAlarmPermission(this)) {
-                    // 显示权限说明对话框
-                    new AlertDialog.Builder(this)
-                        .setTitle("需要权限")
-                        .setMessage("为了定时提醒功能正常工作，请在接下来的页面中允许应用设置精确闹钟")
-                        .setPositiveButton("去设置", (dialogInterface, i) -> {
-                            // 引导到权限设置
-                            Intent intent = new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM);
-                            intent.setData(Uri.parse("package:" + getPackageName()));
-                            startActivity(intent);
-                            // 先关闭提醒开关，等用户授权后再开启
-                            reminderSwitch.setChecked(false);
-                        })
-                        .setNegativeButton("取消", (dialogInterface, i) -> {
-                            // 取消勾选开关
-                            reminderSwitch.setChecked(false);
-                        })
-                        .show();
-                } else {
-                    // 正常启动提醒
-                    ReminderScheduler.startReminder(this);
-                }
+                ReminderScheduler.startReminder(this);
             } else {
                 ReminderScheduler.stopReminder(this);
             }
-            
-            // 更新UI显示
-            showCost = isCostDisplay;
-            if (!showCost) {
-                findViewById(R.id.costContainer).setVisibility(View.GONE);
-            } else {
-                findViewById(R.id.costContainer).setVisibility(View.VISIBLE);
-            }
-            
-            // 重新加载记录列表以应用花费显示变更
-            loadMoments();
             
             Toast.makeText(this, "设置已保存", Toast.LENGTH_SHORT).show();
         });

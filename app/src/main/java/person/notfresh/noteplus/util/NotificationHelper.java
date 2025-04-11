@@ -6,6 +6,10 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
+import android.media.RingtoneManager;
+import android.widget.Toast;
 
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
@@ -56,17 +60,25 @@ public class NotificationHelper {
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(title)
                 .setContentText(content)
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setContentIntent(pendingIntent)
-                .setAutoCancel(true);
+                .setAutoCancel(true)
+                .setVibrate(new long[]{0, 500, 250, 500})
+                .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION));
         
         NotificationManagerCompat notificationManager = NotificationManagerCompat.from(context);
         
         try {
             notificationManager.notify(notificationId, builder.build());
         } catch (SecurityException e) {
-            // 处理缺少通知权限的情况
             e.printStackTrace();
+            
+            try {
+                Handler handler = new Handler(Looper.getMainLooper());
+                handler.post(() -> Toast.makeText(context, title + ": " + content, Toast.LENGTH_LONG).show());
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
         }
     }
     

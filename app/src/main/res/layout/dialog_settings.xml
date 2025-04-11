@@ -91,15 +91,37 @@
         android:layout_marginTop="8dp">
 
         <TextView
-            android:layout_width="0dp"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="每10分钟提醒记录" />
+            android:text="定时提醒" />
 
         <Switch
             android:id="@+id/switchReminder"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content" />
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp" />
+    </LinearLayout>
+    
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="8dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="提醒间隔(分钟)" />
+
+        <EditText
+            android:id="@+id/editTextReminderInterval"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:inputType="number"
+            android:hint="输入分钟数"
+            android:maxLength="4" />
     </LinearLayout>
 
 </LinearLayout> 

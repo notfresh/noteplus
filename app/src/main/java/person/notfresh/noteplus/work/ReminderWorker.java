@@ -8,6 +8,8 @@ import androidx.work.PeriodicWorkRequest;
 import androidx.work.WorkManager;
 import androidx.work.Worker;
 import androidx.work.WorkerParameters;
+import androidx.work.OneTimeWorkRequest;
+import androidx.work.ExistingWorkPolicy;
 
 import java.util.concurrent.TimeUnit;
 
@@ -42,21 +44,65 @@ public class ReminderWorker extends Worker {
         // 确保AlarmManager提醒被设置
         ReminderScheduler.ensureReminderActive(context);
         
+        // 如果间隔小于15分钟，需要在任务完成后重新调度下一次任务
+        long intervalMillis = ReminderScheduler.getReminderInterval(context);
+        if (intervalMillis < 15 * 60 * 1000) {
+            OneTimeWorkRequest nextRequest = 
+                    new OneTimeWorkRequest.Builder(ReminderWorker.class)
+                            .setInitialDelay(intervalMillis, TimeUnit.MILLISECONDS)
+                            .build();
+            
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                    WORK_NAME,
+                    ExistingWorkPolicy.REPLACE,
+                    nextRequest
+            );
+        }
+        
         return Result.success();
     }
     
     // 安排定期工作
-    public static void scheduleReminder(Context context) {
-        PeriodicWorkRequest reminderRequest = 
-                new PeriodicWorkRequest.Builder(ReminderWorker.class, 15, TimeUnit.MINUTES)
-                        .setInitialDelay(10, TimeUnit.MINUTES)
-                        .build();
-        
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-                WORK_NAME,
-                ExistingPeriodicWorkPolicy.UPDATE,
-                reminderRequest
-        );
+    public static void scheduleReminder(Context context, long intervalMillis) {
+        // 如果用户设置的是较短的间隔（小于15分钟）
+        if (intervalMillis < 15 * 60 * 1000) {
+            // 先立即安排一次
+            OneTimeWorkRequest immediateRequest = 
+                    new OneTimeWorkRequest.Builder(ReminderWorker.class)
+                            .build(); // 立即执行
+                            
+            // 然后再安排一个延迟的任务
+            OneTimeWorkRequest delayedRequest = 
+                    new OneTimeWorkRequest.Builder(ReminderWorker.class)
+                            .setInitialDelay(intervalMillis, TimeUnit.MILLISECONDS)
+                            .build();
+            
+            // 先执行立即任务，然后执行延迟任务
+            WorkManager.getInstance(context)
+                    .beginWith(immediateRequest)
+                    .then(delayedRequest)
+                    .enqueue();
+                    
+            // 同时登记唯一任务以便后续取消
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                    WORK_NAME,
+                    ExistingWorkPolicy.REPLACE,
+                    delayedRequest
+            );
+        } else {
+            // 对于15分钟及以上的间隔，使用PeriodicWorkRequest
+            long intervalMinutes = intervalMillis / (60 * 1000);
+            PeriodicWorkRequest reminderRequest = 
+                    new PeriodicWorkRequest.Builder(ReminderWorker.class, intervalMinutes, TimeUnit.MINUTES)
+                            .setInitialDelay(intervalMillis, TimeUnit.MILLISECONDS)
+                            .build();
+            
+            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+                    WORK_NAME,
+                    ExistingPeriodicWorkPolicy.UPDATE,
+                    reminderRequest
+            );
+        }
     }
     
     // 取消定期工作

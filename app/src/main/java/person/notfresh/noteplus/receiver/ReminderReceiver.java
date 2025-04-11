@@ -6,6 +6,9 @@ import android.content.Intent;
 
 import person.notfresh.noteplus.util.NotificationHelper;
 import person.notfresh.noteplus.util.ReminderScheduler;
+import androidx.work.OneTimeWorkRequest;
+import androidx.work.WorkManager;
+import person.notfresh.noteplus.work.ReminderWorker;
 
 public class ReminderReceiver extends BroadcastReceiver {
     
@@ -32,7 +35,12 @@ public class ReminderReceiver extends BroadcastReceiver {
                 1001 // 使用固定ID便于更新或取消
         );
         
-        // 再次设置下一次的提醒
+        // 立即设置下一次的提醒（解决可能被系统延迟的问题）
         ReminderScheduler.scheduleNextReminder(context);
+        
+        // 额外启动一个即时的WorkManager任务作为双保险
+        OneTimeWorkRequest workRequest = new OneTimeWorkRequest.Builder(ReminderWorker.class)
+                .build(); // 立即执行
+        WorkManager.getInstance(context).enqueue(workRequest);
     }
 } 
