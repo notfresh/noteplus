@@ -7,6 +7,11 @@
 		android:maxSdkVersion="28" />
 	<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" 
 		android:maxSdkVersion="32" />
+	<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+	<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+	<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+	<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+	<uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
 	<application
 		android:allowBackup="true"
@@ -27,6 +32,21 @@
 				<category android:name="android.intent.category.LAUNCHER" />
 			</intent-filter>
 		</activity>
+		
+		<!-- 注册提醒广播接收器 -->
+		<receiver 
+		    android:name=".receiver.ReminderReceiver" 
+		    android:exported="false">
+		    <intent-filter>
+		        <action android:name="android.intent.action.BOOT_COMPLETED" />
+		    </intent-filter>
+		</receiver>
+
+		<service 
+		    android:name=".service.ReminderService" 
+		    android:enabled="true"
+		    android:exported="false"
+		    android:foregroundServiceType="dataSync" />
 	</application>
 
 </manifest>

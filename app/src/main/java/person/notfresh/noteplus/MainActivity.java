@@ -81,6 +81,9 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import android.view.inputmethod.InputMethodManager;
+import person.notfresh.noteplus.util.NotificationHelper;
+import person.notfresh.noteplus.util.ReminderScheduler;
+import android.os.PowerManager;
 
 public class MainActivity extends AppCompatActivity {
     private EditText momentEditText;
@@ -114,6 +117,7 @@ public class MainActivity extends AppCompatActivity {
 
     // 添加权限常量
     private static final int PERMISSION_REQUEST_WRITE_STORAGE = 1001;
+    private static final int REQUEST_NOTIFICATION_PERMISSION = 1002;
 
     // 添加输入框展开/收起功能
     private boolean isInputExpanded = false;
@@ -121,6 +125,9 @@ public class MainActivity extends AppCompatActivity {
     // 添加花费输入框
     private EditText costEditText;
     private boolean showCost = true; // 默认显示花费
+
+    // 添加通知助手
+    private NotificationHelper notificationHelper;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -185,6 +192,20 @@ public class MainActivity extends AppCompatActivity {
         // 添加输入框展开/收起功能
         ImageButton expandButton = findViewById(R.id.expandButton);
         expandButton.setOnClickListener(v -> toggleInputExpansion());
+
+        // 初始化通知助手
+        notificationHelper = new NotificationHelper(this);
+        
+        // 请求通知权限(Android 13+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            requestNotificationPermission();
+        }
+
+        // 启动定时提醒
+        if (ReminderScheduler.isReminderEnabled(this)) {
+            ReminderScheduler.scheduleNextReminder(this);
+            checkBatteryOptimizations(); // 检查电池优化设置
+        }
     }
 
     /**
@@ -1604,6 +1625,10 @@ public class MainActivity extends AppCompatActivity {
         String currentCostRequiredValue = dbHelper.getSetting(NoteDbHelper.KEY_COST_REQUIRED, "false");
         costRequiredSwitch.setChecked(Boolean.parseBoolean(currentCostRequiredValue));
         
+        // 添加定时提醒开关
+        Switch reminderSwitch = settingsView.findViewById(R.id.switchReminder);
+        reminderSwitch.setChecked(ReminderScheduler.isReminderEnabled(this));
+        
         // 保存按钮
         builder.setPositiveButton("保存", (dialog, which) -> {
             // 保存时间范围设置
@@ -1617,6 +1642,36 @@ public class MainActivity extends AppCompatActivity {
             // 保存花费必填设置
             boolean isCostRequired = costRequiredSwitch.isChecked();
             dbHelper.saveSetting(NoteDbHelper.KEY_COST_REQUIRED, String.valueOf(isCostRequired));
+            
+            // 保存定时提醒设置
+            boolean enableReminder = reminderSwitch.isChecked();
+            if (enableReminder) {
+                // 先检查权限
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !ReminderScheduler.hasExactAlarmPermission(this)) {
+                    // 显示权限说明对话框
+                    new AlertDialog.Builder(this)
+                        .setTitle("需要权限")
+                        .setMessage("为了定时提醒功能正常工作，请在接下来的页面中允许应用设置精确闹钟")
+                        .setPositiveButton("去设置", (dialogInterface, i) -> {
+                            // 引导到权限设置
+                            Intent intent = new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM);
+                            intent.setData(Uri.parse("package:" + getPackageName()));
+                            startActivity(intent);
+                            // 先关闭提醒开关，等用户授权后再开启
+                            reminderSwitch.setChecked(false);
+                        })
+                        .setNegativeButton("取消", (dialogInterface, i) -> {
+                            // 取消勾选开关
+                            reminderSwitch.setChecked(false);
+                        })
+                        .show();
+                } else {
+                    // 正常启动提醒
+                    ReminderScheduler.startReminder(this);
+                }
+            } else {
+                ReminderScheduler.stopReminder(this);
+            }
             
             // 更新UI显示
             showCost = isCostDisplay;
@@ -1636,5 +1691,40 @@ public class MainActivity extends AppCompatActivity {
         builder.setNegativeButton("取消", null);
         
         builder.show();
+    }
+
+    /**
+     * 请求通知权限(Android 13+需要)
+     */
+    private void requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) 
+                    != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, 
+                        new String[]{Manifest.permission.POST_NOTIFICATIONS}, 
+                        REQUEST_NOTIFICATION_PERMISSION);
+            }
+        }
+    }
+
+    private void checkBatteryOptimizations() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+            boolean isIgnoringBatteryOptimizations = powerManager.isIgnoringBatteryOptimizations(getPackageName());
+            
+            if (!isIgnoringBatteryOptimizations && ReminderScheduler.isReminderEnabled(this)) {
+                // 当用户启用了提醒但应用不在电池优化白名单时，显示提示
+                new AlertDialog.Builder(this)
+                    .setTitle("提高提醒可靠性")
+                    .setMessage("为了确保提醒功能在后台正常工作，建议将应用加入电池优化白名单")
+                    .setPositiveButton("去设置", (dialog, which) -> {
+                        Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                        intent.setData(Uri.parse("package:" + getPackageName()));
+                        startActivity(intent);
+                    })
+                    .setNegativeButton("稍后再说", null)
+                    .show();
+            }
+        }
     }
 } 
