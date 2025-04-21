@@ -15,6 +15,8 @@ import person.notfresh.noteplus.receiver.ReminderReceiver;
 import person.notfresh.noteplus.work.ReminderWorker;
 
 public class ReminderScheduler {
+    // Add this constant definition
+    private static final int REMINDER_REQUEST_CODE = 1001;
     
     private static final String PREF_NAME = "reminder_prefs";
     private static final String KEY_REMINDER_ENABLED = "reminder_enabled";
@@ -124,6 +126,9 @@ public class ReminderScheduler {
      * 调度下一次提醒
      */
     public static void scheduleNextReminder(Context context) {
+        // 先取消现有提醒
+        cancelAllReminders(context);
+        
         if (!isReminderEnabled(context)) {
             return;
         }
@@ -207,4 +212,16 @@ public class ReminderScheduler {
         
         return false;
     }
-} 
+
+    public static void cancelAllReminders(Context context) {
+        AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+        Intent intent = new Intent(context, ReminderReceiver.class);
+        PendingIntent pendingIntent = PendingIntent.getBroadcast(
+                context,
+                REMINDER_REQUEST_CODE,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+        alarmManager.cancel(pendingIntent);
+    }
+}

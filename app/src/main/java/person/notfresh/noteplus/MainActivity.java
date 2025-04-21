@@ -203,10 +203,13 @@ public class MainActivity extends AppCompatActivity {
             requestNotificationPermission();
         }
 
-        // 启动定时提醒
+        // // 启动定时提醒
         if (ReminderScheduler.isReminderEnabled(this)) {
+            // 先取消所有现有提醒
+            ReminderScheduler.cancelAllReminders(this);
+            // 然后设置新提醒
             ReminderScheduler.scheduleNextReminder(this);
-            checkBatteryOptimizations(); // 检查电池优化设置
+            checkBatteryOptimizations();
         }
     }
 
