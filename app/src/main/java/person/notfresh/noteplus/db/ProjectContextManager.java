@@ -21,6 +21,7 @@ public class ProjectContextManager {
     private static final String KEY_PROJECT_LIST = "project_list";
     private static final String DEFAULT_PROJECT = "default";
     private static final String KEY_RECYCLED_PROJECTS = "recycled_projects";
+    private static final String KEY_DEFAULT_PROJECT = "default_project";
     
     private Context appContext;
     private NoteDbHelper currentDbHelper;
@@ -33,7 +34,26 @@ public class ProjectContextManager {
     public ProjectContextManager(Context context) {
         this.appContext = context.getApplicationContext();
         preferences = appContext.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
-        currentProjectName = preferences.getString(KEY_CURRENT_PROJECT, DEFAULT_PROJECT);
+        
+        // 获取默认项目设置
+        String defaultProject = preferences.getString(KEY_DEFAULT_PROJECT, DEFAULT_PROJECT);
+        
+        // 确保默认项目在项目列表中
+        addProjectToList(defaultProject);
+        
+        // 如果当前项目不是默认项目，且应用刚启动，则切换到默认项目
+        String savedCurrentProject = preferences.getString(KEY_CURRENT_PROJECT, DEFAULT_PROJECT);
+        if (savedCurrentProject.equals(defaultProject)) {
+            currentProjectName = savedCurrentProject;
+        } else {
+            // 应用启动时，自动切换到默认项目
+            currentProjectName = defaultProject;
+            preferences.edit().putString(KEY_CURRENT_PROJECT, defaultProject).apply();
+        }
+        
+        // 确保当前项目也在项目列表中
+        addProjectToList(currentProjectName);
+        
         initializeDbHelper();
     }
     
@@ -54,6 +74,28 @@ public class ProjectContextManager {
                     new NoteDbHelper(appContext, getDatabaseName(currentProjectName)));
         }
         return dbHelperCache.get(currentProjectName);
+    }
+    
+    /**
+     * 获取指定项目的数据库Helper
+     */
+    public NoteDbHelper getDbHelperForProject(String projectName) {
+        if (projectName == null || projectName.isEmpty()) {
+            return null;
+        }
+        
+        // 检查项目是否存在
+        List<String> projects = getProjectList();
+        if (!projects.contains(projectName)) {
+            return null;
+        }
+        
+        // 从缓存中获取或创建新的Helper
+        if (!dbHelperCache.containsKey(projectName)) {
+            dbHelperCache.put(projectName, 
+                    new NoteDbHelper(appContext, getDatabaseName(projectName)));
+        }
+        return dbHelperCache.get(projectName);
     }
     
     /**
@@ -423,5 +465,38 @@ public class ProjectContextManager {
         }
         
         return success;
+    }
+
+    /**
+     * 设置默认项目
+     */
+    public boolean setDefaultProject(String projectName) {
+        if (projectName == null || projectName.isEmpty()) {
+            return false;
+        }
+        
+        List<String> projects = getProjectList();
+        if (!projects.contains(projectName)) {
+            return false;
+        }
+        
+        // 保存默认项目设置
+        preferences.edit().putString(KEY_DEFAULT_PROJECT, projectName).apply();
+        
+        return true;
+    }
+
+    /**
+     * 获取默认项目
+     */
+    public String getDefaultProject() {
+        return preferences.getString(KEY_DEFAULT_PROJECT, DEFAULT_PROJECT);
+    }
+
+    /**
+     * 检查指定项目是否为默认项目
+     */
+    public boolean isDefaultProject(String projectName) {
+        return projectName != null && projectName.equals(getDefaultProject());
     }
 } 

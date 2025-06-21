@@ -259,4 +259,25 @@ public class NoteDbHelper extends SQLiteOpenHelper {
             db.insert(TABLE_SETTINGS, null, values);
         }
     }
+
+    /**
+     * 根据标签名称获取标签ID
+     */
+    public long getTagIdByName(String tagName) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        Cursor cursor = db.query(
+                TABLE_TAGS,
+                new String[]{COLUMN_TAG_ID},
+                COLUMN_TAG_NAME + "=?",
+                new String[]{tagName},
+                null, null, null);
+        
+        long tagId = -1;
+        if (cursor.moveToFirst()) {
+            tagId = cursor.getLong(0);
+        }
+        cursor.close();
+        
+        return tagId;
+    }
 } 

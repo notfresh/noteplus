@@ -15,6 +15,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
 import android.provider.Settings;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -29,6 +30,7 @@ import android.widget.ListView;
 import android.widget.SimpleCursorAdapter;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.CheckBox;
 
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
@@ -58,6 +60,8 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Random;
+import java.util.Set;
+import java.util.HashSet;
 
 import person.notfresh.noteplus.db.NoteDbHelper;
 import person.notfresh.noteplus.db.ProjectContextManager;
@@ -130,6 +134,15 @@ public class MainActivity extends AppCompatActivity {
 
     // 添加通知助手
     private NotificationHelper notificationHelper;
+
+    // 添加成员变量来存储待导入的文件信息
+    private Uri pendingImportUri = null;
+    private String pendingImportFormat = null;
+
+    // 添加多选相关的成员变量
+    private boolean isMultiSelectMode = false;
+    private Set<Long> selectedNoteIds = new HashSet<>();
+    private MenuItem multiSelectMenuItem = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -370,7 +383,7 @@ public class MainActivity extends AppCompatActivity {
     }
     
     /**
-     * 添加标签芯片到UI
+     * 添加标签到UI
      */
     private void addTagChip(Tag tag) {
         // 检查是否已添加该标签
@@ -568,6 +581,27 @@ public class MainActivity extends AppCompatActivity {
                 // 为列表项添加时间区间和标签信息
                 updateListItemWithExtras(view, noteId, cost);
                 
+                // 处理多选模式下的复选框
+                CheckBox checkBox = view.findViewById(R.id.checkBox);
+                if (checkBox != null) {
+                    if (isMultiSelectMode) {
+                        checkBox.setVisibility(View.VISIBLE);
+                        checkBox.setChecked(selectedNoteIds.contains(noteId));
+                        
+                        // 设置复选框点击事件
+                        checkBox.setOnClickListener(v -> {
+                            if (checkBox.isChecked()) {
+                                selectedNoteIds.add(noteId);
+                            } else {
+                                selectedNoteIds.remove(noteId);
+                            }
+                            updateMultiSelectMenu();
+                        });
+                    } else {
+                        checkBox.setVisibility(View.GONE);
+                    }
+                }
+                
                 return view;
             }
         };
@@ -585,10 +619,32 @@ public class MainActivity extends AppCompatActivity {
 
         momentsListView.setAdapter(adapter);
         
+        // 添加点击监听器
+        momentsListView.setOnItemClickListener((parent, view, position, id) -> {
+            if (isMultiSelectMode) {
+                // 多选模式下，点击切换选择状态
+                CheckBox checkBox = view.findViewById(R.id.checkBox);
+                if (checkBox != null) {
+                    checkBox.setChecked(!checkBox.isChecked());
+                    if (checkBox.isChecked()) {
+                        selectedNoteIds.add(id);
+                    } else {
+                        selectedNoteIds.remove(id);
+                    }
+                    updateMultiSelectMenu();
+                }
+            }
+        });
+        
         // 添加长按监听器
         momentsListView.setOnItemLongClickListener((parent, view, position, id) -> {
-            showDeleteConfirmDialog(id);
-            return true; // 返回true表示消费了长按事件
+            if (isMultiSelectMode) {
+                // 多选模式下，长按不执行删除操作
+                return false;
+            } else {
+                showDeleteConfirmDialog(id);
+                return true; // 返回true表示消费了长按事件
+            }
         });
     }
     
@@ -771,6 +827,43 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         getMenuInflater().inflate(R.menu.main_menu, menu);
+        
+        // 获取多选相关菜单项的引用
+        multiSelectMenuItem = menu.findItem(R.id.action_multi_select);
+        MenuItem moveToProjectMenuItem = menu.findItem(R.id.action_move_to_project);
+        MenuItem cancelMultiSelectMenuItem = menu.findItem(R.id.action_cancel_multi_select);
+        
+        // 根据多选模式设置菜单项可见性
+        if (isMultiSelectMode) {
+            // 多选模式下显示移动和取消多选菜单项
+            if (moveToProjectMenuItem != null) {
+                moveToProjectMenuItem.setVisible(true);
+            }
+            if (cancelMultiSelectMenuItem != null) {
+                cancelMultiSelectMenuItem.setVisible(true);
+            }
+            // 隐藏其他菜单项
+            menu.findItem(R.id.action_switch_project).setVisible(false);
+            menu.findItem(R.id.action_settings).setVisible(false);
+            menu.findItem(R.id.action_export).setVisible(false);
+            menu.findItem(R.id.action_import).setVisible(false);
+            menu.findItem(R.id.action_recycle_bin).setVisible(false);
+        } else {
+            // 非多选模式下隐藏移动和取消多选菜单项
+            if (moveToProjectMenuItem != null) {
+                moveToProjectMenuItem.setVisible(false);
+            }
+            if (cancelMultiSelectMenuItem != null) {
+                cancelMultiSelectMenuItem.setVisible(false);
+            }
+            // 显示其他菜单项
+            menu.findItem(R.id.action_switch_project).setVisible(true);
+            menu.findItem(R.id.action_settings).setVisible(true);
+            menu.findItem(R.id.action_export).setVisible(true);
+            menu.findItem(R.id.action_import).setVisible(true);
+            menu.findItem(R.id.action_recycle_bin).setVisible(true);
+        }
+        
         return true;
     }
     
@@ -781,11 +874,26 @@ public class MainActivity extends AppCompatActivity {
         if (id == R.id.action_switch_project) {
             showProjectMenu(findViewById(R.id.action_switch_project));
             return true;
-        } else if (id == R.id.action_export_data) {
+        } else if (id == R.id.action_export) {
             showExportDialog();
+            return true;
+        } else if (id == R.id.action_import) {
+            showImportDialog();
+            return true;
+        } else if (id == R.id.action_recycle_bin) {
+            showRecycleBinDialog();
             return true;
         } else if (id == R.id.action_settings) {
             showSettingsDialog();
+            return true;
+        } else if (id == R.id.action_multi_select) {
+            toggleMultiSelectMode();
+            return true;
+        } else if (id == R.id.action_move_to_project) {
+            showMoveToProjectDialog();
+            return true;
+        } else if (id == R.id.action_cancel_multi_select) {
+            exitMultiSelectMode();
             return true;
         }
         
@@ -799,17 +907,45 @@ public class MainActivity extends AppCompatActivity {
         PopupMenu popup = new PopupMenu(this, view);
         Menu menu = popup.getMenu();
         
+        // 直接创建项目列表，确保至少包含默认项目
+        List<String> projects = new ArrayList<>();
+        projects.add("default");
+        
+        // 尝试从projectManager获取更多项目
+        try {
+            List<String> existingProjects = projectManager.getProjectList();
+            if (existingProjects != null && !existingProjects.isEmpty()) {
+                projects.addAll(existingProjects);
+            }
+        } catch (Exception e) {
+            // 如果获取失败，至少确保有默认项目
+            e.printStackTrace();
+        }
+        
+        // 去重并确保默认项目存在
+        Set<String> uniqueProjects = new HashSet<>(projects);
+        uniqueProjects.add("default");
+        final List<String> finalProjects = new ArrayList<>(uniqueProjects);
+        
         // 添加所有项目到菜单
-        List<String> projects = projectManager.getProjectList();
-        for (int i = 0; i < projects.size(); i++) {
-            String project = projects.get(i);
-            menu.add(Menu.NONE, i, Menu.NONE, project);
+        for (int i = 0; i < finalProjects.size(); i++) {
+            String project = finalProjects.get(i);
+            String displayName = project;
             
             // 标记当前项目
             if (project.equals(projectManager.getCurrentProject())) {
-                MenuItem item = menu.getItem(i);
-                item.setTitle("✓ " + project);
+                displayName = "✓ " + project;
             }
+            
+            // 标记默认项目
+            if (projectManager.isDefaultProject(project)) {
+                if (!displayName.startsWith("✓ ")) {
+                    displayName = "★ " + displayName;
+                }
+                displayName += " (默认)";
+            }
+            
+            menu.add(Menu.NONE, i, Menu.NONE, displayName);
         }
         
         // 添加管理选项到底部
@@ -825,7 +961,7 @@ public class MainActivity extends AppCompatActivity {
             }
             
             // 切换到选择的项目
-            String selectedProject = projects.get(itemId);
+            String selectedProject = finalProjects.get(itemId);
             
             // 如果点击的是当前项目，不执行切换
             if (selectedProject.equals(projectManager.getCurrentProject())) {
@@ -847,7 +983,7 @@ public class MainActivity extends AppCompatActivity {
         builder.setTitle("项目管理");
         
         // 创建一个带图标的列表项
-        String[] options = new String[]{"创建新项目", "重命名项目", "删除项目", "回收站"};
+        String[] options = new String[]{"创建新项目", "重命名项目", "删除项目", "设置默认项目", "回收站"};
         
         builder.setItems(options, (dialog, which) -> {
             switch (which) {
@@ -860,7 +996,10 @@ public class MainActivity extends AppCompatActivity {
                 case 2: // 删除项目
                     showSelectProjectForDelete();
                     break;
-                case 3: // 回收站
+                case 3: // 设置默认项目
+                    showSelectProjectForDefault();
+                    break;
+                case 4: // 回收站
                     showRecycleBinDialog();
                     break;
             }
@@ -874,48 +1013,162 @@ public class MainActivity extends AppCompatActivity {
      * 显示选择要重命名的项目对话框
      */
     private void showSelectProjectForRename() {
-        List<String> projects = projectManager.getProjectList();
-        String[] items = projects.toArray(new String[0]);
+        // 直接创建项目列表，确保至少包含默认项目
+        List<String> projects = new ArrayList<>();
+        projects.add("default");
+        
+        // 尝试从projectManager获取更多项目
+        try {
+            List<String> existingProjects = projectManager.getProjectList();
+            if (existingProjects != null && !existingProjects.isEmpty()) {
+                projects.addAll(existingProjects);
+            }
+        } catch (Exception e) {
+            // 如果获取失败，至少确保有默认项目
+            e.printStackTrace();
+        }
+        
+        // 去重并确保默认项目存在
+        Set<String> uniqueProjects = new HashSet<>(projects);
+        final List<String> finalProjects = new ArrayList<>(uniqueProjects);
+        
+        String[] items = new String[finalProjects.size()];
+        
+        // 为每个项目添加标识，显示默认项目
+        for (int i = 0; i < finalProjects.size(); i++) {
+            String project = finalProjects.get(i);
+            if (projectManager.isDefaultProject(project)) {
+                items[i] = project + " (默认)";
+            } else {
+                items[i] = project;
+            }
+        }
         
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("选择要重命名的项目");
         
         builder.setItems(items, (dialog, which) -> {
-            String selectedProject = projects.get(which);
+            String selectedProject = finalProjects.get(which);
             showRenameProjectDialog(selectedProject);
         });
         
         builder.setNegativeButton("取消", null);
         builder.show();
     }
-    
+
+    /**
+     * 显示选择要设置为默认的项目对话框
+     */
+    private void showSelectProjectForDefault() {
+        // 直接创建项目列表，确保至少包含默认项目
+        List<String> projects = new ArrayList<>();
+        projects.add("default");
+        
+        // 尝试从projectManager获取更多项目
+        try {
+            List<String> existingProjects = projectManager.getProjectList();
+            if (existingProjects != null && !existingProjects.isEmpty()) {
+                projects.addAll(existingProjects);
+            }
+        } catch (Exception e) {
+            // 如果获取失败，至少确保有默认项目
+            e.printStackTrace();
+        }
+        
+        // 去重并确保默认项目存在
+        Set<String> uniqueProjects = new HashSet<>(projects);
+        uniqueProjects.add("default");
+        final List<String> finalProjects = new ArrayList<>(uniqueProjects);
+        
+        // 创建显示项（保持默认项目标识）
+        String[] items = new String[finalProjects.size()];
+        for (int i = 0; i < finalProjects.size(); i++) {
+            String project = finalProjects.get(i);
+            if (projectManager.isDefaultProject(project)) {
+                items[i] = "✓ " + project + " (当前默认)";
+            } else {
+                items[i] = project;
+            }
+        }
+        
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("选择默认项目");
+        
+        builder.setItems(items, (dialog, which) -> {
+            String selectedProject = finalProjects.get(which);
+            
+            // 如果选择的已经是默认项目，不需要重复设置
+            if (projectManager.isDefaultProject(selectedProject)) {
+                Toast.makeText(this, "该项目已经是默认项目", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            
+            // 设置新的默认项目
+            if (projectManager.setDefaultProject(selectedProject)) {
+                Toast.makeText(this, "已将 \"" + selectedProject + "\" 设置为默认项目", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this, "设置默认项目失败", Toast.LENGTH_SHORT).show();
+            }
+        });
+        
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
+
     /**
      * 显示选择要删除的项目对话框
      */
     private void showSelectProjectForDelete() {
-        List<String> projects = new ArrayList<>(projectManager.getProjectList());
-        // 移除默认项目，防止被删除
-        projects.remove("default");
+        // 直接创建项目列表，确保至少包含默认项目
+        List<String> projects = new ArrayList<>();
+        projects.add("default");
         
-        if (projects.isEmpty()) {
+        // 尝试从projectManager获取更多项目
+        try {
+            List<String> existingProjects = projectManager.getProjectList();
+            if (existingProjects != null && !existingProjects.isEmpty()) {
+                projects.addAll(existingProjects);
+            }
+        } catch (Exception e) {
+            // 如果获取失败，至少确保有默认项目
+            e.printStackTrace();
+        }
+        
+        // 去重并确保默认项目存在
+        Set<String> uniqueProjects = new HashSet<>(projects);
+        uniqueProjects.add("default");
+        List<String> allProjects = new ArrayList<>(uniqueProjects);
+        
+        // 移除默认项目，防止被删除
+        String defaultProject = projectManager.getDefaultProject();
+        allProjects.remove(defaultProject);
+        
+        if (allProjects.isEmpty()) {
             Toast.makeText(this, "没有可删除的项目", Toast.LENGTH_SHORT).show();
             return;
         }
         
-        String[] items = projects.toArray(new String[0]);
+        final List<String> finalProjects = allProjects;
+        String[] items = new String[finalProjects.size()];
+        
+        // 为每个项目添加标识
+        for (int i = 0; i < finalProjects.size(); i++) {
+            String project = finalProjects.get(i);
+            items[i] = project;
+        }
         
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("选择要删除的项目");
+        builder.setTitle("选择要删除的项目 (默认项目 \"" + defaultProject + "\" 不能被删除)");
         
         builder.setItems(items, (dialog, which) -> {
-            String selectedProject = projects.get(which);
+            String selectedProject = finalProjects.get(which);
             showDeleteProjectConfirmation(selectedProject);
         });
         
         builder.setNegativeButton("取消", null);
         builder.show();
     }
-    
+
     /**
      * 显示重命名项目对话框
      */
@@ -945,7 +1198,7 @@ public class MainActivity extends AppCompatActivity {
         
         builder.show();
     }
-    
+
     /**
      * 显示删除项目确认对话框
      */
@@ -1000,7 +1253,7 @@ public class MainActivity extends AppCompatActivity {
         
         builder.show();
     }
-    
+
     /**
      * 显示创建新项目对话框
      */
@@ -1027,7 +1280,7 @@ public class MainActivity extends AppCompatActivity {
         
         builder.show();
     }
-    
+
     /**
      * 切换到指定项目
      */
@@ -1398,7 +1651,7 @@ public class MainActivity extends AppCompatActivity {
         // 获取所有记录
         Cursor notesCursor = db.query(
                 NoteDbHelper.TABLE_NOTES,
-                new String[]{"_id", NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP},
+                new String[]{"_id", NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP, NoteDbHelper.COLUMN_COST},
                 null, null, null, null,
                 NoteDbHelper.COLUMN_TIMESTAMP + " DESC"
         );
@@ -1406,7 +1659,7 @@ public class MainActivity extends AppCompatActivity {
         OutputStreamWriter writer = new OutputStreamWriter(outputStream);
         
         // 写入CSV头
-        writer.write("ID,内容,时间戳,开始时间,结束时间,标签\n");
+        writer.write("ID,内容,时间戳,花费,开始时间,结束时间,标签\n");
         
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
         
@@ -1415,6 +1668,7 @@ public class MainActivity extends AppCompatActivity {
             long noteId = notesCursor.getLong(notesCursor.getColumnIndexOrThrow("_id"));
             String content = notesCursor.getString(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_CONTENT));
             long timestamp = notesCursor.getLong(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TIMESTAMP));
+            double cost = notesCursor.getDouble(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COST));
             
             // 处理CSV中的特殊字符
             content = "\"" + content.replace("\"", "\"\"") + "\"";
@@ -1423,6 +1677,7 @@ public class MainActivity extends AppCompatActivity {
             line.append(noteId).append(",");
             line.append(content).append(",");
             line.append(sdf.format(new Date(timestamp))).append(",");
+            line.append(cost).append(",");
             
             // 获取时间范围
             Cursor timeRangeCursor = dbHelper.getTimeRangesForNote(noteId);
@@ -1464,7 +1719,7 @@ public class MainActivity extends AppCompatActivity {
         // 获取所有记录
         Cursor notesCursor = db.query(
                 NoteDbHelper.TABLE_NOTES,
-                new String[]{"_id", NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP},
+                new String[]{"_id", NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP, NoteDbHelper.COLUMN_COST},
                 null, null, null, null,
                 NoteDbHelper.COLUMN_TIMESTAMP + " DESC"
         );
@@ -1479,10 +1734,12 @@ public class MainActivity extends AppCompatActivity {
             long noteId = notesCursor.getLong(notesCursor.getColumnIndexOrThrow("_id"));
             String content = notesCursor.getString(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_CONTENT));
             long timestamp = notesCursor.getLong(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TIMESTAMP));
+            double cost = notesCursor.getDouble(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COST));
             
             noteObject.put("id", noteId);
             noteObject.put("content", content);
             noteObject.put("timestamp", sdf.format(new Date(timestamp)));
+            noteObject.put("cost", cost);
             
             // 获取时间范围
             Cursor timeRangeCursor = dbHelper.getTimeRangesForNote(noteId);
@@ -1734,5 +1991,784 @@ public class MainActivity extends AppCompatActivity {
                     .show();
             }
         }
+    }
+
+    private void showImportDialog() {
+        String[] importOptions = new String[]{"从CSV导入", "从JSON导入"};
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("选择导入格式");
+        builder.setItems(importOptions, (dialog, which) -> {
+            String format = importOptions[which];
+            if (checkStoragePermission()) {
+                importData(format);
+            } else {
+                requestStoragePermission();
+            }
+        });
+
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
+
+    private static final int PICK_FILE_REQUEST_CODE = 1003;
+
+    private void importData(String format) {
+        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+
+        if (format.contains("CSV")) {
+            intent.setType("text/csv");
+        } else if (format.contains("JSON")) {
+            intent.setType("application/json");
+        }
+
+        try {
+            startActivityForResult(Intent.createChooser(intent, "选择一个文件进行导入"), PICK_FILE_REQUEST_CODE);
+        } catch (ActivityNotFoundException e) {
+            Toast.makeText(this, "请安装文件管理器.", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == PICK_FILE_REQUEST_CODE && resultCode == RESULT_OK && data != null) {
+            Uri uri = data.getData();
+            if (uri != null) {
+                // 存储待导入的文件信息
+                pendingImportUri = uri;
+                
+                // 确定文件格式
+                String path = uri.getPath();
+                if(path != null){
+                     if (path.endsWith(".csv")) {
+                        pendingImportFormat = "CSV";
+                    } else if (path.endsWith(".json")) {
+                        pendingImportFormat = "JSON";
+                    } else {
+                         // Fallback for URIs that don't have a clear path extension
+                         // e.g. from Google Drive. We rely on the MIME type from the intent.
+                         ContentResolver cR = this.getContentResolver();
+                         String mimeType = cR.getType(uri);
+                         if (mimeType != null) {
+                             if (mimeType.equals("text/csv") || mimeType.equals("text/comma-separated-values")) {
+                                 pendingImportFormat = "CSV";
+                             } else if (mimeType.equals("application/json")) {
+                                 pendingImportFormat = "JSON";
+                             } else {
+                                 Toast.makeText(this, "不支持的文件类型: " + mimeType, Toast.LENGTH_SHORT).show();
+                                 return;
+                             }
+                         } else {
+                              Toast.makeText(this, "无法确定文件类型", Toast.LENGTH_SHORT).show();
+                              return;
+                         }
+                    }
+                }
+                
+                // 显示导入目标选择对话框
+                showImportTargetDialog();
+            }
+        }
+    }
+
+    /**
+     * 显示导入目标选择对话框
+     */
+    private void showImportTargetDialog() {
+        String currentProject = projectManager.getCurrentProject();
+        String[] options = new String[]{
+            "导入到当前项目: " + currentProject,
+            "导入到新项目"
+        };
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("选择导入的目标位置");
+        //builder.setMessage("请选择将数据导入到哪里？");
+        builder.setItems(options, (dialog, which) -> {
+            if (which == 0) {
+                // 导入到当前项目
+                importToCurrentProject();
+            } else if (which == 1) {
+                // 导入到新项目
+                showCreateProjectForImportDialog();
+            }
+        });
+        builder.setNegativeButton("取消", (dialog, which) -> {
+            // 清除待导入的文件信息
+            pendingImportUri = null;
+            pendingImportFormat = null;
+        });
+        builder.show();
+    }
+
+    /**
+     * 显示为导入创建新项目的对话框
+     */
+    private void showCreateProjectForImportDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("创建新项目");
+        builder.setMessage("请输入新项目的名称，数据将导入到这个项目中");
+        
+        final EditText input = new EditText(this);
+        input.setHint("输入项目名称");
+        builder.setView(input);
+        
+        builder.setPositiveButton("创建并导入", (dialog, which) -> {
+            String projectName = input.getText().toString().trim();
+            if (!projectName.isEmpty()) {
+                if (projectManager.createProject(projectName)) {
+                    // 切换到新项目并导入数据
+                    switchProjectAndImport(projectName);
+                } else {
+                    Toast.makeText(this, "创建项目失败，可能项目名已存在", Toast.LENGTH_SHORT).show();
+                }
+            } else {
+                Toast.makeText(this, "请输入项目名称", Toast.LENGTH_SHORT).show();
+            }
+        });
+        
+        builder.setNegativeButton("取消", (dialog, which) -> {
+            // 清除待导入的文件信息
+            pendingImportUri = null;
+            pendingImportFormat = null;
+        });
+        
+        builder.show();
+    }
+
+    /**
+     * 导入到当前项目
+     */
+    private void importToCurrentProject() {
+        if (pendingImportUri != null && pendingImportFormat != null) {
+            if ("CSV".equals(pendingImportFormat)) {
+                readCsvData(pendingImportUri);
+            } else if ("JSON".equals(pendingImportFormat)) {
+                readJsonData(pendingImportUri);
+            }
+            
+            // 清除待导入的文件信息
+            pendingImportUri = null;
+            pendingImportFormat = null;
+        }
+    }
+
+    /**
+     * 切换到指定项目并导入数据
+     */
+    private void switchProjectAndImport(String projectName) {
+        // 显示加载指示器
+        ProgressDialog progressDialog = new ProgressDialog(this);
+        progressDialog.setMessage("正在创建项目并准备导入...");
+        progressDialog.setCancelable(false);
+        progressDialog.show();
+        
+        // 使用后台线程处理数据库操作
+        new Thread(() -> {
+            if (projectManager.switchToProject(projectName)) {
+                // 数据库操作放在后台线程中执行
+                if (dbHelper != null) {
+                    dbHelper.close();
+                }
+                dbHelper = projectManager.getCurrentDbHelper();
+                
+                // 回到主线程更新UI并开始导入
+                runOnUiThread(() -> {
+                    updateTitle();
+                    clearForm();
+                    
+                    // 开始导入数据
+                    if (pendingImportUri != null && pendingImportFormat != null) {
+                        if ("CSV".equals(pendingImportFormat)) {
+                            readCsvData(pendingImportUri);
+                        } else if ("JSON".equals(pendingImportFormat)) {
+                            readJsonData(pendingImportUri);
+                        }
+                        
+                        // 清除待导入的文件信息
+                        pendingImportUri = null;
+                        pendingImportFormat = null;
+                    }
+                    
+                    progressDialog.dismiss();
+                    Toast.makeText(MainActivity.this, 
+                            "已切换到项目：" + projectName, 
+                            Toast.LENGTH_SHORT).show();
+                });
+            } else {
+                runOnUiThread(() -> {
+                    progressDialog.dismiss();
+                    Toast.makeText(MainActivity.this, 
+                            "切换项目失败", 
+                            Toast.LENGTH_SHORT).show();
+                });
+            }
+        }).start();
+    }
+
+    private void readCsvData(Uri uri) {
+        // 显示进度对话框
+        ProgressDialog progressDialog = new ProgressDialog(this);
+        progressDialog.setMessage("正在从CSV导入...");
+        progressDialog.setCancelable(false);
+        progressDialog.show();
+        
+        // 在后台线程执行导入操作
+        new Thread(() -> {
+            try {
+                ContentResolver resolver = getContentResolver();
+                java.io.InputStream inputStream = resolver.openInputStream(uri);
+                if (inputStream == null) {
+                    runOnUiThread(() -> {
+                        progressDialog.dismiss();
+                        Toast.makeText(this, "无法读取文件", Toast.LENGTH_SHORT).show();
+                    });
+                    return;
+                }
+                
+                java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(inputStream));
+                String line;
+                int importedCount = 0;
+                int skippedCount = 0;
+                
+                // 跳过标题行
+                reader.readLine();
+                
+                SQLiteDatabase db = dbHelper.getWritableDatabase();
+                db.beginTransaction();
+                
+                try {
+                    while ((line = reader.readLine()) != null) {
+                        if (line.trim().isEmpty()) continue;
+                        
+                        try {
+                            // 解析CSV行
+                            String[] fields = parseCsvLine(line);
+                            if (fields.length >= 3) {
+                                // 解析字段 - 格式：ID,内容,时间戳,花费,开始时间,结束时间,标签
+                                long noteId = Long.parseLong(fields[0]);
+                                String content = fields[1].replace("\"\"", "\""); // 处理转义的双引号
+                                String timestampStr = fields[2];
+                                
+                                // 解析时间戳
+                                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+                                long timestamp = sdf.parse(timestampStr).getTime();
+                                
+                                // 插入笔记
+                                ContentValues noteValues = new ContentValues();
+                                noteValues.put(NoteDbHelper.COLUMN_CONTENT, content);
+                                noteValues.put(NoteDbHelper.COLUMN_TIMESTAMP, timestamp);
+                                
+                                // 处理花费信息 (字段3)
+                                if (fields.length > 3 && !fields[3].isEmpty()) {
+                                    try {
+                                        double cost = Double.parseDouble(fields[3]);
+                                        noteValues.put(NoteDbHelper.COLUMN_COST, cost);
+                                    } catch (NumberFormatException e) {
+                                        // 花费解析失败，使用默认值0
+                                        noteValues.put(NoteDbHelper.COLUMN_COST, 0.0);
+                                    }
+                                }
+                                
+                                long newNoteId = db.insert(NoteDbHelper.TABLE_NOTES, null, noteValues);
+                                
+                                // 处理时间范围 (字段4和5)
+                                if (fields.length > 6 && !fields[4].isEmpty() && !fields[5].isEmpty()) {
+                                    try {
+                                        long startTime = sdf.parse(fields[4]).getTime();
+                                        long endTime = sdf.parse(fields[5]).getTime();
+                                        dbHelper.saveTimeRange(newNoteId, startTime, endTime);
+                                    } catch (Exception e) {
+                                        // 时间范围解析失败，跳过
+                                    }
+                                }
+                                
+                                // 处理标签 (字段6)
+                                if (fields.length > 6 && !fields[6].isEmpty()) {
+                                    String tagsStr = fields[6].replace("\"", "");
+                                    String[] tagNames = tagsStr.split(";");
+                                    for (String tagName : tagNames) {
+                                        if (!tagName.trim().isEmpty()) {
+                                            // 检查标签是否存在，不存在则创建
+                                            long tagId = dbHelper.getTagIdByName(tagName.trim());
+                                            if (tagId == -1) {
+                                                // 创建新标签
+                                                String[] colors = {"#FF5722", "#9C27B0", "#2196F3", "#4CAF50", "#FFC107", "#607D8B"};
+                                                String randomColor = colors[new Random().nextInt(colors.length)];
+                                                tagId = dbHelper.addTag(tagName.trim(), randomColor);
+                                            }
+                                            if (tagId != -1) {
+                                                dbHelper.linkNoteToTag(newNoteId, tagId);
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                importedCount++;
+                            }
+                        } catch (Exception e) {
+                            skippedCount++;
+                            e.printStackTrace();
+                        }
+                    }
+                    
+                    db.setTransactionSuccessful();
+                    
+                    final int finalImportedCount = importedCount;
+                    final int finalSkippedCount = skippedCount;
+                    
+                    runOnUiThread(() -> {
+                        progressDialog.dismiss();
+                        String currentProject = projectManager.getCurrentProject();
+                        String message = String.format("导入完成！成功导入 %d 条记录到项目 \"%s\"", finalImportedCount, currentProject);
+                        if (finalSkippedCount > 0) {
+                            message += String.format("，跳过 %d 条记录", finalSkippedCount);
+                        }
+                        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+                        loadMoments(); // 刷新列表
+                    });
+                    
+                } finally {
+                    db.endTransaction();
+                    reader.close();
+                    inputStream.close();
+                }
+                
+            } catch (Exception e) {
+                e.printStackTrace();
+                runOnUiThread(() -> {
+                    progressDialog.dismiss();
+                    Toast.makeText(this, "导入失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
+            }
+        }).start();
+    }
+
+    private void readJsonData(Uri uri) {
+        // 显示进度对话框
+        ProgressDialog progressDialog = new ProgressDialog(this);
+        progressDialog.setMessage("正在从JSON导入...");
+        progressDialog.setCancelable(false);
+        progressDialog.show();
+        
+        // 在后台线程执行导入操作
+        new Thread(() -> {
+            try {
+                ContentResolver resolver = getContentResolver();
+                java.io.InputStream inputStream = resolver.openInputStream(uri);
+                if (inputStream == null) {
+                    runOnUiThread(() -> {
+                        progressDialog.dismiss();
+                        Toast.makeText(this, "无法读取文件", Toast.LENGTH_SHORT).show();
+                    });
+                    return;
+                }
+                
+                // 读取JSON内容
+                java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(inputStream));
+                StringBuilder jsonString = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    jsonString.append(line);
+                }
+                
+                JSONObject rootObject = new JSONObject(jsonString.toString());
+                JSONArray notesArray = rootObject.getJSONArray("notes");
+                
+                int importedCount = 0;
+                int skippedCount = 0;
+                
+                SQLiteDatabase db = dbHelper.getWritableDatabase();
+                db.beginTransaction();
+                
+                try {
+                    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+                    
+                    for (int i = 0; i < notesArray.length(); i++) {
+                        try {
+                            JSONObject noteObject = notesArray.getJSONObject(i);
+                            
+                            // 解析笔记基本信息
+                            String content = noteObject.getString("content");
+                            String timestampStr = noteObject.getString("timestamp");
+                            long timestamp = sdf.parse(timestampStr).getTime();
+                            
+                            // 插入笔记
+                            ContentValues noteValues = new ContentValues();
+                            noteValues.put(NoteDbHelper.COLUMN_CONTENT, content);
+                            noteValues.put(NoteDbHelper.COLUMN_TIMESTAMP, timestamp);
+                            
+                            // 处理花费信息
+                            if (noteObject.has("cost")) {
+                                double cost = noteObject.getDouble("cost");
+                                noteValues.put(NoteDbHelper.COLUMN_COST, cost);
+                            }
+                            
+                            long newNoteId = db.insert(NoteDbHelper.TABLE_NOTES, null, noteValues);
+                            
+                            // 处理时间范围
+                            if (noteObject.has("timeRange")) {
+                                JSONObject timeRange = noteObject.getJSONObject("timeRange");
+                                String startTimeStr = timeRange.getString("start");
+                                String endTimeStr = timeRange.getString("end");
+                                
+                                long startTime = sdf.parse(startTimeStr).getTime();
+                                long endTime = sdf.parse(endTimeStr).getTime();
+                                dbHelper.saveTimeRange(newNoteId, startTime, endTime);
+                            }
+                            
+                            // 处理标签
+                            if (noteObject.has("tags")) {
+                                JSONArray tagsArray = noteObject.getJSONArray("tags");
+                                for (int j = 0; j < tagsArray.length(); j++) {
+                                    JSONObject tagObject = tagsArray.getJSONObject(j);
+                                    String tagName = tagObject.getString("name");
+                                    String tagColor = tagObject.getString("color");
+                                    
+                                    // 检查标签是否存在
+                                    long tagId = dbHelper.getTagIdByName(tagName);
+                                    if (tagId == -1) {
+                                        // 创建新标签
+                                        tagId = dbHelper.addTag(tagName, tagColor);
+                                    }
+                                    if (tagId != -1) {
+                                        dbHelper.linkNoteToTag(newNoteId, tagId);
+                                    }
+                                }
+                            }
+                            
+                            importedCount++;
+                            
+                        } catch (Exception e) {
+                            skippedCount++;
+                            e.printStackTrace();
+                        }
+                    }
+                    
+                    db.setTransactionSuccessful();
+                    
+                    final int finalImportedCount = importedCount;
+                    final int finalSkippedCount = skippedCount;
+                    
+                    runOnUiThread(() -> {
+                        progressDialog.dismiss();
+                        String currentProject = projectManager.getCurrentProject();
+                        String message = String.format("导入完成！成功导入 %d 条记录到项目 \"%s\"", finalImportedCount, currentProject);
+                        if (finalSkippedCount > 0) {
+                            message += String.format("，跳过 %d 条记录", finalSkippedCount);
+                        }
+                        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+                        loadMoments(); // 刷新列表
+                    });
+                    
+                } finally {
+                    db.endTransaction();
+                    reader.close();
+                    inputStream.close();
+                }
+                
+            } catch (Exception e) {
+                e.printStackTrace();
+                runOnUiThread(() -> {
+                    progressDialog.dismiss();
+                    Toast.makeText(this, "导入失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
+            }
+        }).start();
+    }
+
+    /**
+     * 解析CSV行，处理引号内的逗号
+     */
+    private String[] parseCsvLine(String line) {
+        List<String> fields = new ArrayList<>();
+        StringBuilder currentField = new StringBuilder();
+        boolean inQuotes = false;
+        
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            
+            if (c == '"') {
+                if (inQuotes && i + 1 < line.length() && line.charAt(i + 1) == '"') {
+                    // 转义的双引号
+                    currentField.append('"');
+                    i++; // 跳过下一个引号
+                } else {
+                    // 切换引号状态
+                    inQuotes = !inQuotes;
+                }
+            } else if (c == ',' && !inQuotes) {
+                // 字段分隔符
+                fields.add(currentField.toString());
+                currentField = new StringBuilder();
+            } else {
+                currentField.append(c);
+            }
+        }
+        
+        // 添加最后一个字段
+        fields.add(currentField.toString());
+        
+        return fields.toArray(new String[0]);
+    }
+
+    /**
+     * 切换多选模式
+     */
+    private void toggleMultiSelectMode() {
+        isMultiSelectMode = !isMultiSelectMode;
+        
+        if (isMultiSelectMode) {
+            // 进入多选模式
+            selectedNoteIds.clear();
+            updateMultiSelectMenu();
+            invalidateOptionsMenu(); // 刷新菜单
+            adapter.notifyDataSetChanged(); // 刷新列表显示复选框
+        } else {
+            // 退出多选模式
+            selectedNoteIds.clear();
+            updateMultiSelectMenu();
+            invalidateOptionsMenu(); // 刷新菜单
+            adapter.notifyDataSetChanged(); // 隐藏复选框
+        }
+    }
+
+    /**
+     * 退出多选模式
+     */
+    private void exitMultiSelectMode() {
+        isMultiSelectMode = false;
+        selectedNoteIds.clear();
+        updateMultiSelectMenu();
+        invalidateOptionsMenu(); // 刷新菜单
+        adapter.notifyDataSetChanged(); // 隐藏复选框
+    }
+
+    /**
+     * 更新多选菜单状态
+     */
+    private void updateMultiSelectMenu() {
+        if (multiSelectMenuItem != null) {
+            if (isMultiSelectMode) {
+                multiSelectMenuItem.setTitle("多选 (" + selectedNoteIds.size() + ")");
+            } else {
+                multiSelectMenuItem.setTitle("多选");
+            }
+        }
+    }
+
+    /**
+     * 显示移动到项目对话框
+     */
+    private void showMoveToProjectDialog() {
+        if (selectedNoteIds.isEmpty()) {
+            Toast.makeText(this, "请先选择要移动的记录", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // 获取所有项目列表
+        List<String> projects = new ArrayList<>();
+        projects.add("default");
+        
+        try {
+            List<String> existingProjects = projectManager.getProjectList();
+            if (existingProjects != null && !existingProjects.isEmpty()) {
+                projects.addAll(existingProjects);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        
+        // 去重并确保默认项目存在
+        Set<String> uniqueProjects = new HashSet<>(projects);
+        uniqueProjects.add("default");
+        final List<String> finalProjects = new ArrayList<>(uniqueProjects);
+        
+        // 移除当前项目
+        String currentProject = projectManager.getCurrentProject();
+        finalProjects.remove(currentProject);
+        
+        if (finalProjects.isEmpty()) {
+            Toast.makeText(this, "没有其他项目可以移动", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        String[] items = new String[finalProjects.size()];
+        for (int i = 0; i < finalProjects.size(); i++) {
+            String project = finalProjects.get(i);
+            if (projectManager.isDefaultProject(project)) {
+                items[i] = project + " (默认)";
+            } else {
+                items[i] = project;
+            }
+        }
+        
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("选择目标项目");
+        //builder.setMessage("将选中的 " + selectedNoteIds.size() + " 条记录移动到哪个项目？");
+        
+        builder.setItems(items, (dialog, which) -> {
+            String targetProject = finalProjects.get(which);
+            showMoveConfirmationDialog(targetProject);
+        });
+        
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
+
+    /**
+     * 显示移动确认对话框
+     */
+    private void showMoveConfirmationDialog(String targetProject) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("确认移动");
+        builder.setMessage("确定要将选中的 " + selectedNoteIds.size() + " 条记录移动到项目 \"" + targetProject + "\" 吗？");
+        
+        builder.setPositiveButton("移动", (dialog, which) -> {
+            moveNotesToProject(targetProject);
+        });
+        
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
+
+    /**
+     * 移动记录到指定项目
+     */
+    private void moveNotesToProject(String targetProject) {
+        // 显示进度对话框
+        ProgressDialog progressDialog = new ProgressDialog(this);
+        progressDialog.setMessage("正在移动记录...");
+        progressDialog.setCancelable(false);
+        progressDialog.show();
+        
+        // 在后台线程执行移动操作
+        new Thread(() -> {
+            try {
+                // 获取目标项目的数据库Helper
+                NoteDbHelper targetDbHelper = projectManager.getDbHelperForProject(targetProject);
+                if (targetDbHelper == null) {
+                    runOnUiThread(() -> {
+                        progressDialog.dismiss();
+                        Toast.makeText(this, "目标项目不存在", Toast.LENGTH_SHORT).show();
+                    });
+                    return;
+                }
+                
+                SQLiteDatabase sourceDb = dbHelper.getReadableDatabase();
+                SQLiteDatabase targetDb = targetDbHelper.getWritableDatabase();
+                
+                int movedCount = 0;
+                int failedCount = 0;
+                
+                // 开始事务
+                targetDb.beginTransaction();
+                sourceDb.beginTransaction();
+                
+                try {
+                    for (Long noteId : selectedNoteIds) {
+                        try {
+                            // 1. 从源数据库获取记录信息
+                            Cursor noteCursor = sourceDb.query(
+                                NoteDbHelper.TABLE_NOTES,
+                                new String[]{"_id", NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP, NoteDbHelper.COLUMN_COST},
+                                "_id = ?",
+                                new String[]{String.valueOf(noteId)},
+                                null, null, null
+                            );
+                            
+                            if (noteCursor.moveToFirst()) {
+                                String content = noteCursor.getString(noteCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_CONTENT));
+                                long timestamp = noteCursor.getLong(noteCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TIMESTAMP));
+                                double cost = noteCursor.getDouble(noteCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COST));
+                                
+                                // 2. 插入到目标数据库
+                                ContentValues values = new ContentValues();
+                                values.put(NoteDbHelper.COLUMN_CONTENT, content);
+                                values.put(NoteDbHelper.COLUMN_TIMESTAMP, timestamp);
+                                values.put(NoteDbHelper.COLUMN_COST, cost);
+                                
+                                long newNoteId = targetDb.insert(NoteDbHelper.TABLE_NOTES, null, values);
+                                
+                                if (newNoteId != -1) {
+                                    // 3. 复制时间范围
+                                    Cursor timeRangeCursor = dbHelper.getTimeRangesForNote(noteId);
+                                    if (timeRangeCursor.moveToFirst()) {
+                                        long startTime = timeRangeCursor.getLong(timeRangeCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_START_TIME));
+                                        long endTime = timeRangeCursor.getLong(timeRangeCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_END_TIME));
+                                        targetDbHelper.saveTimeRange(newNoteId, startTime, endTime);
+                                    }
+                                    timeRangeCursor.close();
+                                    
+                                    // 4. 复制标签关联
+                                    Cursor tagsCursor = dbHelper.getTagsForNote(noteId);
+                                    while (tagsCursor.moveToNext()) {
+                                        String tagName = tagsCursor.getString(tagsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TAG_NAME));
+                                        String tagColor = tagsCursor.getString(tagsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TAG_COLOR));
+                                        
+                                        // 检查目标项目中是否存在该标签
+                                        long tagId = targetDbHelper.getTagIdByName(tagName);
+                                        if (tagId == -1) {
+                                            // 创建新标签
+                                            tagId = targetDbHelper.addTag(tagName, tagColor);
+                                        }
+                                        if (tagId != -1) {
+                                            targetDbHelper.linkNoteToTag(newNoteId, tagId);
+                                        }
+                                    }
+                                    tagsCursor.close();
+                                    
+                                    // 5. 从源数据库删除记录
+                                    sourceDb.delete(NoteDbHelper.TABLE_NOTES, "_id = ?", new String[]{String.valueOf(noteId)});
+                                    
+                                    movedCount++;
+                                } else {
+                                    failedCount++;
+                                }
+                            }
+                            noteCursor.close();
+                            
+                        } catch (Exception e) {
+                            failedCount++;
+                            e.printStackTrace();
+                        }
+                    }
+                    
+                    // 提交事务
+                    targetDb.setTransactionSuccessful();
+                    sourceDb.setTransactionSuccessful();
+                    
+                    final int finalMovedCount = movedCount;
+                    final int finalFailedCount = failedCount;
+                    
+                    runOnUiThread(() -> {
+                        progressDialog.dismiss();
+                        
+                        String message = String.format("移动完成！成功移动 %d 条记录到项目 \"%s\"", finalMovedCount, targetProject);
+                        if (finalFailedCount > 0) {
+                            message += String.format("，失败 %d 条记录", finalFailedCount);
+                        }
+                        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+                        
+                        // 退出多选模式并刷新列表
+                        exitMultiSelectMode();
+                        loadMoments();
+                    });
+                    
+                } finally {
+                    targetDb.endTransaction();
+                    sourceDb.endTransaction();
+                }
+                
+            } catch (Exception e) {
+                e.printStackTrace();
+                runOnUiThread(() -> {
+                    progressDialog.dismiss();
+                    Toast.makeText(this, "移动失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
+            }
+        }).start();
     }
 } 

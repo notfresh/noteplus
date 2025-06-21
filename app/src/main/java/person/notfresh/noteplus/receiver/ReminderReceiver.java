@@ -6,9 +6,7 @@ import android.content.Intent;
 
 import person.notfresh.noteplus.util.NotificationHelper;
 import person.notfresh.noteplus.util.ReminderScheduler;
-import androidx.work.OneTimeWorkRequest;
-import androidx.work.WorkManager;
-import person.notfresh.noteplus.work.ReminderWorker;
+
 
 public class ReminderReceiver extends BroadcastReceiver {
     
