@@ -35,6 +35,7 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
+import android.view.Gravity;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
@@ -51,6 +52,8 @@ import android.content.ActivityNotFoundException;
 import android.content.ContentResolver;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.ClipboardManager;
+import android.content.ClipData;
 import androidx.annotation.NonNull;
 import android.view.inputmethod.InputMethodManager;
 
@@ -69,7 +72,6 @@ import com.google.android.material.chip.ChipGroup;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
-
 
 import person.notfresh.noteplus.db.NoteDbHelper;
 import person.notfresh.noteplus.db.ProjectContextManager;
@@ -222,6 +224,20 @@ public class MainActivity extends AppCompatActivity {
         // 检查是否错过了提醒
         if (ReminderScheduler.isReminderEnabled(this)) {
             ReminderScheduler.checkMissedReminder(this);
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (dbHelper != null) {
+            dbHelper.close();
+        }
+        // 即使closeAll()不可用，也确保正确关闭数据库
+        if (projectManager != null) {
+            // 暂时的解决方案，不调用closeAll
+            // 代替的方法是切换到默认项目，这会确保当前数据库关闭
+            projectManager.switchToProject("default");
         }
     }
 
@@ -636,10 +652,10 @@ public class MainActivity extends AppCompatActivity {
         // 添加长按监听器
         momentsListView.setOnItemLongClickListener((parent, view, position, id) -> {
             if (isMultiSelectMode) {
-                // 多选模式下，长按不执行删除操作
+                // 多选模式下，长按不执行操作
                 return false;
             } else {
-                showDeleteConfirmDialog(id);
+                showNoteOptionsMenu(view, id);
                 return true; // 返回true表示消费了长按事件
             }
         });
@@ -797,19 +813,7 @@ public class MainActivity extends AppCompatActivity {
         return Math.round(dp * density);
     }
 
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        if (dbHelper != null) {
-            dbHelper.close();
-        }
-        // 即使closeAll()不可用，也确保正确关闭数据库
-        if (projectManager != null) {
-            // 暂时的解决方案，不调用closeAll
-            // 代替的方法是切换到默认项目，这会确保当前数据库关闭
-            projectManager.switchToProject("default");
-        }
-    }
+
 
     /**
      * 更新标题显示当前项目
@@ -1823,6 +1827,93 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
+     * 显示笔记选项菜单
+     * @param anchorView 锚点视图，菜单将显示在此视图附近
+     * @param noteId 笔记ID
+     */
+    private void showNoteOptionsMenu(View anchorView, long noteId) {
+        PopupMenu popupMenu = new PopupMenu(this, anchorView);
+        
+        // 设置菜单显示在顶部（登高位置）
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            popupMenu.setGravity(Gravity.TOP);
+        }
+        
+        Menu menu = popupMenu.getMenu();
+        
+        // 添加菜单项
+        menu.add("复制到剪切板");
+        menu.add("删除");
+        
+        // 设置菜单项点击监听器
+        popupMenu.setOnMenuItemClickListener(item -> {
+            String title = item.getTitle().toString();
+            switch (title) {
+                case "复制到剪切板":
+                    copyToClipboard(noteId);
+                    return true;
+                case "删除":
+                    showDeleteConfirmDialog(noteId);
+                    return true;
+                default:
+                    return false;
+            }
+        });
+        
+        popupMenu.show();
+    }
+
+    /**
+     * 复制笔记内容到剪切板
+     * @param noteId 笔记ID
+     */
+    private void copyToClipboard(long noteId) {
+        // 从数据库获取笔记内容
+        String noteContent = getNoteContentById(noteId);
+        
+        if (noteContent != null && !noteContent.trim().isEmpty()) {
+            // 获取剪切板管理器
+            ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            ClipData clip = ClipData.newPlainText("笔记内容", noteContent);
+            clipboard.setPrimaryClip(clip);
+            
+            // 显示成功提示
+            Toast.makeText(this, "已复制到剪切板", Toast.LENGTH_SHORT).show();
+        } else {
+            // 显示错误提示
+            Toast.makeText(this, "无法获取笔记内容", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /**
+     * 根据笔记ID获取笔记内容
+     * @param noteId 笔记ID
+     * @return 笔记内容字符串，如果获取失败返回null
+     */
+    private String getNoteContentById(long noteId) {
+        SQLiteDatabase db = dbHelper.getReadableDatabase();
+        String content = null;
+        
+        Cursor cursor = db.query(
+            NoteDbHelper.TABLE_NOTES,
+            new String[]{NoteDbHelper.COLUMN_CONTENT},
+            NoteDbHelper.COLUMN_ID + "=?",
+            new String[]{String.valueOf(noteId)},
+            null, null, null
+        );
+        
+        if (cursor != null && cursor.moveToFirst()) {
+            int contentIndex = cursor.getColumnIndex(NoteDbHelper.COLUMN_CONTENT);
+            if (contentIndex != -1) {
+                content = cursor.getString(contentIndex);
+            }
+            cursor.close();
+        }
+        
+        return content;
+    }
+
+    /**
      * 删除记录
      * @param noteId 要删除的记录ID
      */
@@ -2786,4 +2877,4 @@ public class MainActivity extends AppCompatActivity {
             }
         }).start();
     }
-} 
+}
