@@ -34,6 +34,7 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
 import android.view.inputmethod.EditorInfo;
 import android.view.Gravity;
 import android.widget.Button;
@@ -1832,35 +1833,30 @@ public class MainActivity extends AppCompatActivity {
      * @param noteId 笔记ID
      */
     private void showNoteOptionsMenu(View anchorView, long noteId) {
-        PopupMenu popupMenu = new PopupMenu(this, anchorView);
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("选择操作");
         
-        // 设置菜单显示在顶部（登高位置）
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            popupMenu.setGravity(Gravity.TOP);
-        }
+        String[] options = {"复制到剪切板", "删除"};
         
-        Menu menu = popupMenu.getMenu();
-        
-        // 添加菜单项
-        menu.add("复制到剪切板");
-        menu.add("删除");
-        
-        // 设置菜单项点击监听器
-        popupMenu.setOnMenuItemClickListener(item -> {
-            String title = item.getTitle().toString();
-            switch (title) {
-                case "复制到剪切板":
+        builder.setItems(options, (dialog, which) -> {
+            switch (which) {
+                case 0: // 复制到剪切板
                     copyToClipboard(noteId);
-                    return true;
-                case "删除":
+                    break;
+                case 1: // 删除
                     showDeleteConfirmDialog(noteId);
-                    return true;
-                default:
-                    return false;
+                    break;
             }
         });
         
-        popupMenu.show();
+        AlertDialog dialog = builder.create();
+        dialog.show();
+        
+        // 设置对话框居中显示
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setGravity(Gravity.CENTER);
+        }
     }
 
     /**
