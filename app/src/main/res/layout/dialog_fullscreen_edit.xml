@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#FFFFFF">
+
+    <!-- 顶部工具栏 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:orientation="horizontal"
+        android:gravity="center_vertical|end"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:background="?attr/colorPrimary"
+        android:elevation="4dp">
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <ImageButton
+            android:id="@+id/btnExitFullscreen"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:src="@drawable/ic_collapse"
+            android:tint="#FFFFFF"
+            android:backgroundTint="@android:color/transparent"
+            android:contentDescription="退出全屏"
+            android:padding="8dp"
+            android:layout_marginEnd="8dp" />
+
+        <Button
+            android:id="@+id/btnSaveFullscreen"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="保存"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="@android:color/transparent"
+            android:minWidth="0dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp" />
+    </LinearLayout>
+
+    <!-- 全屏编辑区域 - 使用ScrollView包裹，让系统自动处理滚动 -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <EditText
+            android:id="@+id/fullscreenEditText"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:hint="在这里输入或编辑内容..."
+            android:inputType="textMultiLine|textCapSentences"
+            android:gravity="top|start"
+            android:padding="16dp"
+            android:textSize="16sp"
+            android:lineSpacingExtra="4dp"
+            android:background="#FFFFFF"
+            android:scrollbars="vertical"
+            android:textColor="#212121"
+            android:textColorHint="#9E9E9E"
+            android:scrollHorizontally="false"
+            android:singleLine="false"
+            android:minHeight="0dp" />
+
+    </ScrollView>
+
+</LinearLayout>

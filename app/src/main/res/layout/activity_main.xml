@@ -45,7 +45,7 @@
 			android:layout_marginStart="4dp"
 			android:layout_marginTop="8dp"
 			android:background="?attr/selectableItemBackgroundBorderless"
-			android:contentDescription="展开/收起输入框"
+			android:contentDescription="切换输入模式"
 			android:src="@drawable/ic_expand"
 			android:alpha="0.6"
 			android:tint="#757575" />

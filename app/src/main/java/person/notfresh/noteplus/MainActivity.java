@@ -35,7 +35,9 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.view.Gravity;
 import android.widget.Button;
 import android.widget.EditText;
@@ -56,7 +58,6 @@ import android.content.pm.PackageManager;
 import android.content.ClipboardManager;
 import android.content.ClipData;
 import androidx.annotation.NonNull;
-import android.view.inputmethod.InputMethodManager;
 
 import android.os.PowerManager;
 
@@ -87,8 +88,12 @@ public class MainActivity extends AppCompatActivity {
     private static final int PERMISSION_REQUEST_WRITE_STORAGE = 1001;
     private static final int REQUEST_NOTIFICATION_PERMISSION = 1002;
 
-    // 添加输入框展开/收起功能
-    private boolean isInputExpanded = false;
+    // 输入模式：0=普通, 1=展开, 2=全屏
+    private static final int INPUT_MODE_NORMAL = 0;
+    private static final int INPUT_MODE_EXPANDED = 1;
+    private static final int INPUT_MODE_FULLSCREEN = 2;
+    private int inputMode = INPUT_MODE_NORMAL;
+    
     private boolean showCost = true; // 默认显示花费
     private boolean timeDescOrder = true; // 默认按时间逆序显示
 
@@ -196,9 +201,9 @@ public class MainActivity extends AppCompatActivity {
             return false;
         });
 
-        // 添加输入框展开/收起功能
+        // 添加输入模式切换功能（三档切换：普通 -> 展开 -> 全屏 -> 普通）
         ImageButton expandButton = findViewById(R.id.expandButton);
-        expandButton.setOnClickListener(v -> toggleInputExpansion());
+        expandButton.setOnClickListener(v -> toggleInputMode());
 
         // 初始化通知助手
         notificationHelper = new NotificationHelper(this);
@@ -1786,28 +1791,110 @@ public class MainActivity extends AppCompatActivity {
         writer.flush();
     }
 
-    // 添加这个方法来处理输入框展开/收起
-    private void toggleInputExpansion() {
-        isInputExpanded = !isInputExpanded;
+    /**
+     * 三档切换输入模式：普通 -> 展开 -> 全屏 -> 普通
+     */
+    private void toggleInputMode() {
+        ImageButton expandButton = findViewById(R.id.expandButton);
         
-        // 更新输入框的最小行数
-        if (isInputExpanded) {
-            momentEditText.setMinLines(4);  // 展开为多行
-            momentEditText.setMaxLines(8);
-            // 将光标定位到文本末尾
-            momentEditText.setSelection(momentEditText.getText().length());
-            // 显示键盘
-            momentEditText.requestFocus();
-            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-            imm.showSoftInput(momentEditText, InputMethodManager.SHOW_IMPLICIT);
-        } else {
-            momentEditText.setMinLines(1);  // 收起为单行
-            momentEditText.setMaxLines(3);
+        // 循环切换到下一个模式
+        inputMode = (inputMode + 1) % 3;
+        
+        switch (inputMode) {
+            case INPUT_MODE_NORMAL:
+                // 普通模式：单行输入框
+                momentEditText.setMinLines(1);
+                momentEditText.setMaxLines(3);
+                expandButton.setImageResource(R.drawable.ic_expand);
+                expandButton.setContentDescription("展开输入框");
+                break;
+                
+            case INPUT_MODE_EXPANDED:
+                // 展开模式：多行输入框
+                momentEditText.setMinLines(4);
+                momentEditText.setMaxLines(8);
+                // 将光标定位到文本末尾
+                momentEditText.setSelection(momentEditText.getText().length());
+                // 显示键盘
+                momentEditText.requestFocus();
+                InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                if (imm != null) {
+                    imm.showSoftInput(momentEditText, InputMethodManager.SHOW_IMPLICIT);
+                }
+                expandButton.setImageResource(R.drawable.ic_fullscreen);
+                expandButton.setContentDescription("全屏编辑");
+                break;
+                
+            case INPUT_MODE_FULLSCREEN:
+                // 全屏模式：打开全屏编辑对话框
+                expandButton.setImageResource(R.drawable.ic_collapse);
+                expandButton.setContentDescription("收起输入框");
+                showFullscreenEditor();
+                break;
+        }
+    }
+
+    /**
+     * 显示全屏编辑对话框
+     */
+    private void showFullscreenEditor() {
+        // 创建全屏对话框
+        AlertDialog dialog = new AlertDialog.Builder(this, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen).create();
+        View fullscreenView = getLayoutInflater().inflate(R.layout.dialog_fullscreen_edit, null);
+        dialog.setView(fullscreenView);
+        
+        EditText fullscreenEditText = fullscreenView.findViewById(R.id.fullscreenEditText);
+        ImageButton btnExitFullscreen = fullscreenView.findViewById(R.id.btnExitFullscreen);
+        Button btnSaveFullscreen = fullscreenView.findViewById(R.id.btnSaveFullscreen);
+        
+        // 复制内容
+        fullscreenEditText.setText(momentEditText.getText().toString());
+        if (fullscreenEditText.getText().length() > 0) {
+            fullscreenEditText.setSelection(fullscreenEditText.getText().length());
         }
         
-        // 更新按钮图标
-        ((ImageButton)findViewById(R.id.expandButton)).setImageResource(
-            isInputExpanded ? R.drawable.ic_collapse : R.drawable.ic_expand);
+        // 退出按钮
+        btnExitFullscreen.setOnClickListener(v -> {
+            momentEditText.setText(fullscreenEditText.getText().toString());
+            dialog.dismiss();
+        });
+        
+        // 保存按钮
+        btnSaveFullscreen.setOnClickListener(v -> {
+            momentEditText.setText(fullscreenEditText.getText().toString());
+            dialog.dismiss();
+            saveMoment();
+        });
+        
+        // 关闭时重置状态
+        dialog.setOnDismissListener(d -> {
+            inputMode = INPUT_MODE_NORMAL;
+            momentEditText.setMinLines(1);
+            momentEditText.setMaxLines(3);
+            ImageButton expandButton = findViewById(R.id.expandButton);
+            expandButton.setImageResource(R.drawable.ic_expand);
+            expandButton.setContentDescription("展开输入框");
+        });
+        
+        // 设置窗口属性
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawableResource(android.R.color.white);
+            window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+            // 使用ADJUST_RESIZE让系统自动处理键盘
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        }
+        
+        dialog.show();
+        
+        // 显示键盘
+        fullscreenEditText.post(() -> {
+            fullscreenEditText.requestFocus();
+            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.showSoftInput(fullscreenEditText, InputMethodManager.SHOW_IMPLICIT);
+            }
+        });
     }
 
     /**
