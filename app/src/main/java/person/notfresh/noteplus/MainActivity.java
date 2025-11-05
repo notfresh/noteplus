@@ -5,6 +5,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -1664,7 +1665,7 @@ public class MainActivity extends AppCompatActivity {
                 NoteDbHelper.COLUMN_TIMESTAMP + " DESC"
         );
         
-        OutputStreamWriter writer = new OutputStreamWriter(outputStream);
+        OutputStreamWriter writer = new OutputStreamWriter(outputStream, StandardCharsets.UTF_8);
         
         // 写入CSV头
         writer.write("ID,内容,时间戳,花费,开始时间,结束时间,标签\n");
@@ -2204,7 +2205,9 @@ public class MainActivity extends AppCompatActivity {
         intent.addCategory(Intent.CATEGORY_OPENABLE);
 
         if (format.contains("CSV")) {
-            intent.setType("text/csv");
+            // 使用通配符，让用户选择所有文件，然后通过文件扩展名.csv来识别
+            // 这样可以确保CSV文件在任何文件管理器中都能被选择
+            intent.setType("*/*");
         } else if (format.contains("JSON")) {
             intent.setType("application/json");
         }

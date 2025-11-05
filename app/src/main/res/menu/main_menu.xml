@@ -2,7 +2,7 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
       xmlns:app="http://schemas.android.com/apk/res-auto">
     
-    
+    <!-- 工具栏上显示的菜单项 -->
     <item
         android:id="@+id/action_switch_project"
         android:title="切换项目"
@@ -10,10 +10,17 @@
         app:showAsAction="always" />
 
     <item
-        android:id="@+id/action_settings"
-        android:title="项目设置"
-        android:icon="@drawable/ic_settings"
-        app:showAsAction="ifRoom" />
+        android:id="@+id/action_multi_select"
+        android:title="多选"
+        android:icon="@drawable/ic_select_all"
+        app:showAsAction="always" />
+
+    <item
+        android:id="@+id/action_move_to_project"
+        android:title="移动到项目"
+        android:icon="@drawable/ic_move"
+        app:showAsAction="always"
+        android:visible="false" />
 
     <item
         android:id="@+id/action_export"
@@ -33,26 +40,18 @@
         android:icon="@drawable/ic_recycle"
         app:showAsAction="ifRoom" />
 
-    <!-- 多选相关菜单项 -->
+    <!-- 溢出菜单中的菜单项 -->
     <item
-        android:id="@+id/action_multi_select"
-        android:title="多选"
-        android:icon="@drawable/ic_select_all"
-        app:showAsAction="ifRoom" />
-
-    <item
-        android:id="@+id/action_move_to_project"
-        android:title="移动到项目"
-        android:icon="@drawable/ic_move"
-        app:showAsAction="ifRoom"
-        android:visible="false" />
+        android:id="@+id/action_settings"
+        android:title="项目设置"
+        android:icon="@drawable/ic_settings"
+        app:showAsAction="never" />
 
     <item
         android:id="@+id/action_cancel_multi_select"
         android:title="取消多选"
         android:icon="@drawable/ic_cancel"
-        app:showAsAction="ifRoom"
+        app:showAsAction="never"
         android:visible="false" />
         
-    
 </menu> 
