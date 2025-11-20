@@ -58,6 +58,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.ClipboardManager;
 import android.content.ClipData;
+import android.content.SharedPreferences;
 import androidx.annotation.NonNull;
 
 import android.os.PowerManager;
@@ -82,6 +83,7 @@ import person.notfresh.noteplus.model.Tag;
 
 import person.notfresh.noteplus.util.NotificationHelper;
 import person.notfresh.noteplus.util.ReminderScheduler;
+import person.notfresh.noteplus.util.StringUtil;
 
 
 public class MainActivity extends AppCompatActivity {
@@ -140,6 +142,9 @@ public class MainActivity extends AppCompatActivity {
     private Uri pendingImportUri = null;
     private String pendingImportFormat = null;
 
+    // 折叠状态管理
+    private Set<Long> foldedNoteIds = new HashSet<>();
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -186,6 +191,9 @@ public class MainActivity extends AppCompatActivity {
 
         // 加载设置配置
         loadSettings();
+        
+        // 加载折叠状态
+        loadFoldedNoteIds();
 
         // 加载现有记录
         loadMoments();
@@ -595,11 +603,20 @@ public class MainActivity extends AppCompatActivity {
                 Cursor cursor = (Cursor) getItem(position);
                 long noteId = cursor.getLong(cursor.getColumnIndexOrThrow("_id"));
                 
+                // 设置tag，用于后续定位View
+                view.setTag(noteId);
+                
                 // 获取花费金额
                 double cost = cursor.getDouble(cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COST));
                 
+                // 获取笔记内容
+                String content = cursor.getString(cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_CONTENT));
+                
                 // 为列表项添加时间区间和标签信息
                 updateListItemWithExtras(view, noteId, cost);
+                
+                // 判断是否显示折叠按钮
+                checkAndShowFoldButton(view, noteId, content);
                 
                 // 处理多选模式下的复选框
                 CheckBox checkBox = view.findViewById(R.id.checkBox);
@@ -688,7 +705,7 @@ public class MainActivity extends AppCompatActivity {
             parent.addView(extrasContainer, parent.indexOfChild(contentText) + 1);
         }
         
-        // 清空现有内容
+        // 清空现有内容（按钮会在checkAndShowFoldButton中重新添加）
         extrasContainer.removeAllViews();
         
         // 添加时间区间信息
@@ -707,6 +724,237 @@ public class MainActivity extends AppCompatActivity {
             String costText = String.format(" [¥%.2f]", cost);
             contentText.setText(currentText + costText);
         }
+    }
+    
+    /**
+     * 检查并显示折叠按钮
+     * @param view 列表项视图
+     * @param noteId 笔记ID
+     * @param content 笔记内容
+     */
+    private void checkAndShowFoldButton(View view, long noteId, String content) {
+        // 读取当前项目的折叠字数配置
+        String foldLengthStr = dbHelper.getSetting(NoteDbHelper.KEY_FOLD_DISPLAY_LENGTH, "300");
+        int foldDisplayLength;
+        try {
+            foldDisplayLength = Integer.parseInt(foldLengthStr);
+        } catch (NumberFormatException e) {
+            foldDisplayLength = 300; // 默认值
+        }
+        
+        // 计算笔记字数
+        int wordCount = StringUtil.calculateWordCount(content);
+        
+        // 如果超过配置值，显示折叠按钮
+        if (wordCount > foldDisplayLength) {
+            TextView contentText = view.findViewById(R.id.contentText);
+            if (contentText != null) {
+                boolean isFolded = foldedNoteIds.contains(noteId);
+                String displayText;
+                String buttonText;
+                
+                if (isFolded) {
+                    // 折叠状态：显示截断后的文本
+                    String truncated = StringUtil.truncateToWordCount(content, foldDisplayLength);
+                    displayText = truncated + "...";
+                    buttonText = "展开";
+                } else {
+                    // 展开状态：显示完整内容
+                    displayText = content;
+                    buttonText = "折叠";
+                }
+                
+                // 设置内容文本（需要保留可能已添加的花费信息）
+                String currentText = contentText.getText().toString();
+                String finalText = displayText;
+                // 检查是否有花费信息（格式：[¥xx.xx]）
+                if (currentText.contains(" [¥")) {
+                    int costIndex = currentText.lastIndexOf(" [¥");
+                    if (costIndex > 0) {
+                        String costPart = currentText.substring(costIndex);
+                        finalText = displayText + costPart;
+                    }
+                }
+                contentText.setText(finalText);
+                
+                // 获取或创建extrasContainer（用于放置按钮）
+                LinearLayout extrasContainer = view.findViewById(R.id.extrasContainer);
+                if (extrasContainer == null) {
+                    // 如果extrasContainer不存在，创建它
+                    // 注意：这里使用外层的contentText变量，不再重新声明
+                    ViewGroup parent = (ViewGroup) contentText.getParent();
+                    if (parent != null) {
+                        extrasContainer = new LinearLayout(this);
+                        extrasContainer.setId(R.id.extrasContainer);
+                        extrasContainer.setOrientation(LinearLayout.VERTICAL);
+                        extrasContainer.setLayoutParams(new LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.MATCH_PARENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT));
+                        parent.addView(extrasContainer, parent.indexOfChild(contentText) + 1);
+                    } else {
+                        return; // 如果找不到父容器，无法添加按钮
+                    }
+                }
+                
+                // 查找或创建折叠按钮
+                TextView foldButton = (TextView) view.findViewWithTag("foldButton_" + noteId);
+                if (foldButton == null) {
+                    // 创建新按钮
+                    foldButton = new TextView(this);
+                    foldButton.setTag("foldButton_" + noteId);
+                    foldButton.setTextColor(Color.BLACK);
+                    foldButton.setTypeface(null, android.graphics.Typeface.BOLD);
+                    foldButton.setPadding(dpToPx(4), dpToPx(8), 0, dpToPx(4));
+                    foldButton.setTextSize(14);
+                    
+                    // 将按钮添加到extrasContainer底部
+                    extrasContainer.addView(foldButton);
+                } else {
+                    // 确保已存在的按钮也保持加粗样式
+                    foldButton.setTypeface(null, android.graphics.Typeface.BOLD);
+                }
+                
+                // 设置按钮文本和点击事件
+                foldButton.setText(buttonText);
+                foldButton.setOnClickListener(v -> {
+                    // 找到被点击的View在ListView中的position
+                    int position = -1;
+                    for (int i = 0; i < momentsListView.getChildCount(); i++) {
+                        View childView = momentsListView.getChildAt(i);
+                        if (childView != null && childView == view) {
+                            position = momentsListView.getFirstVisiblePosition() + i;
+                            break;
+                        }
+                    }
+                    
+                    // 切换折叠状态
+                    toggleNoteFold(noteId);
+                    
+                    // 直接更新当前View，不刷新整个列表
+                    updateSingleNoteView(noteId, content, position);
+                });
+                foldButton.setVisibility(View.VISIBLE);
+            }
+        } else {
+            // 如果不超过配置值，隐藏折叠按钮
+            TextView foldButton = (TextView) view.findViewWithTag("foldButton_" + noteId);
+            if (foldButton != null) {
+                foldButton.setVisibility(View.GONE);
+            }
+        }
+    }
+    
+    /**
+     * 更新单个笔记的视图（用于折叠/展开）
+     * @param noteId 笔记ID
+     * @param content 笔记完整内容（从按钮点击事件传入）
+     * @param targetPosition 目标记录的position（如果已知，用于滚动定位）
+     */
+    private void updateSingleNoteView(long noteId, String content, int targetPosition) {
+        // 保存当前滚动位置（作为备用）
+        int firstVisiblePosition = momentsListView.getFirstVisiblePosition();
+        View firstVisibleView = momentsListView.getChildAt(0);
+        int scrollOffset = 0;
+        if (firstVisibleView != null) {
+            scrollOffset = firstVisibleView.getTop();
+        }
+        
+        // 查找对应的View并更新
+        boolean found = false;
+        for (int i = 0; i < momentsListView.getChildCount(); i++) {
+            View childView = momentsListView.getChildAt(i);
+            if (childView != null) {
+                // 通过tag查找对应的笔记
+                Object tag = childView.getTag();
+                if (tag != null && tag.equals(noteId)) {
+                    // 找到对应的View，直接更新
+                    // 重新调用checkAndShowFoldButton来更新内容和按钮
+                    checkAndShowFoldButton(childView, noteId, content);
+                    found = true;
+                    break;
+                }
+            }
+        }
+        
+        // 如果View不在可见区域，使用notifyDataSetChanged但恢复滚动位置
+        if (!found) {
+            noteListAdapter.notifyDataSetChanged();
+            // 如果知道目标position，滚动到该位置；否则恢复之前的滚动位置
+            if (targetPosition >= 0) {
+                momentsListView.setSelectionFromTop(targetPosition, dpToPx(8)); // 留出一点顶部间距
+            } else {
+                momentsListView.setSelectionFromTop(firstVisiblePosition, scrollOffset);
+            }
+        } else {
+            // 如果找到了View，滚动到该记录的顶部
+            if (targetPosition >= 0) {
+                // 使用已知的position滚动到顶部
+                momentsListView.setSelectionFromTop(targetPosition, dpToPx(8)); // 留出一点顶部间距
+            } else {
+                // 如果不知道position，尝试从View反推
+                for (int i = 0; i < momentsListView.getChildCount(); i++) {
+                    View childView = momentsListView.getChildAt(i);
+                    if (childView != null) {
+                        Object tag = childView.getTag();
+                        if (tag != null && tag.equals(noteId)) {
+                            int position = momentsListView.getFirstVisiblePosition() + i;
+                            momentsListView.setSelectionFromTop(position, dpToPx(8));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * 从 SharedPreferences 加载折叠状态
+     */
+    private void loadFoldedNoteIds() {
+        foldedNoteIds.clear();
+        String currentProject = projectManager.getCurrentProject();
+        SharedPreferences prefs = getSharedPreferences("noteplus_fold_state", Context.MODE_PRIVATE);
+        String key = "folded_note_ids_" + currentProject;
+        Set<String> foldedIdsStr = prefs.getStringSet(key, new HashSet<>());
+        
+        for (String idStr : foldedIdsStr) {
+            try {
+                foldedNoteIds.add(Long.parseLong(idStr));
+            } catch (NumberFormatException e) {
+                // 忽略无效的ID
+            }
+        }
+    }
+    
+    /**
+     * 保存折叠状态到 SharedPreferences
+     */
+    private void saveFoldedNoteIds() {
+        String currentProject = projectManager.getCurrentProject();
+        SharedPreferences prefs = getSharedPreferences("noteplus_fold_state", Context.MODE_PRIVATE);
+        SharedPreferences.Editor editor = prefs.edit();
+        String key = "folded_note_ids_" + currentProject;
+        
+        Set<String> foldedIdsStr = new HashSet<>();
+        for (Long id : foldedNoteIds) {
+            foldedIdsStr.add(String.valueOf(id));
+        }
+        
+        editor.putStringSet(key, foldedIdsStr);
+        editor.apply();
+    }
+    
+    /**
+     * 切换笔记的折叠状态
+     * @param noteId 笔记ID
+     */
+    private void toggleNoteFold(long noteId) {
+        if (foldedNoteIds.contains(noteId)) {
+            foldedNoteIds.remove(noteId);
+        } else {
+            foldedNoteIds.add(noteId);
+        }
+        saveFoldedNoteIds();
     }
     
     /**
@@ -1314,6 +1562,9 @@ public class MainActivity extends AppCompatActivity {
                     // 重新加载新项目的设置
                     loadSettings();
                     
+                    // 加载新项目的折叠状态
+                    loadFoldedNoteIds();
+                    
                     // 加载数据前更新提示
                     progressDialog.setMessage("正在加载数据...");
                     
@@ -1534,11 +1785,11 @@ public class MainActivity extends AppCompatActivity {
         String fileExtension = "";
         
         if (format.contains("CSV")) {
-            fileName = projectManager.getCurrentProject() + "_export.csv";
+            fileName = projectManager.getCurrentProject() + "_noteplus_export.csv";
             mimeType = "text/csv";
             fileExtension = ".csv";
         } else if (format.contains("JSON")) {
-            fileName = projectManager.getCurrentProject() + "_export.json";
+            fileName = projectManager.getCurrentProject() + "_noteplus_export.json";
             mimeType = "application/json";
             fileExtension = ".json";
         } else {
@@ -2086,6 +2337,11 @@ public class MainActivity extends AppCompatActivity {
         Switch timeDescOrderSwitch = settingsView.findViewById(R.id.switchTimeDescOrder);
         timeDescOrderSwitch.setChecked(timeDescOrder);
         
+        // 初始化折叠显示字数输入框
+        EditText foldDisplayLengthEdit = settingsView.findViewById(R.id.editTextFoldDisplayLength);
+        String currentFoldLength = dbHelper.getSetting(NoteDbHelper.KEY_FOLD_DISPLAY_LENGTH, "300");
+        foldDisplayLengthEdit.setText(currentFoldLength);
+        
         // 保存按钮点击事件处理
         builder.setPositiveButton("保存", (dialog, which) -> {
             // 保存时间范围设置
@@ -2130,10 +2386,25 @@ public class MainActivity extends AppCompatActivity {
             boolean newTimeDescOrder = timeDescOrderSwitch.isChecked();
             dbHelper.saveSetting(NoteDbHelper.KEY_TIME_DESC_ORDER, String.valueOf(newTimeDescOrder));
             
+            // 保存折叠显示字数设置
+            String foldLengthStr = foldDisplayLengthEdit.getText().toString().trim();
+            int foldLength;
+            try {
+                foldLength = Integer.parseInt(foldLengthStr);
+                // 确保最小值为1
+                if (foldLength < 1) {
+                    foldLength = 1;
+                }
+            } catch (NumberFormatException e) {
+                // 如果输入无效，使用默认值300
+                foldLength = 300;
+            }
+            dbHelper.saveSetting(NoteDbHelper.KEY_FOLD_DISPLAY_LENGTH, String.valueOf(foldLength));
+            
             // 重新加载设置以更新界面
             loadSettings();
             
-            // 重新加载列表以应用新的排序设置
+            // 重新加载列表以应用新的排序设置和折叠设置
             loadMoments();
             
             Toast.makeText(this, "设置已保存", Toast.LENGTH_SHORT).show();
@@ -2203,7 +2474,7 @@ public class MainActivity extends AppCompatActivity {
     private void importData(String format) {
         Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
-
+        // format字符串 "从CSV导入" 或 "从JSON导入"
         if (format.contains("CSV")) {
             // 使用通配符，让用户选择所有文件，然后通过文件扩展名.csv来识别
             // 这样可以确保CSV文件在任何文件管理器中都能被选择
@@ -2370,6 +2641,9 @@ public class MainActivity extends AppCompatActivity {
                     
                     // 重新加载新项目的设置
                     loadSettings();
+                    
+                    // 加载新项目的折叠状态
+                    loadFoldedNoteIds();
                     
                     // 开始导入数据
                     if (pendingImportUri != null && pendingImportFormat != null) {

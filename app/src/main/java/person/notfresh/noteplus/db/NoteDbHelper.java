@@ -8,7 +8,7 @@ import android.content.ContentValues;
 
 public class NoteDbHelper extends SQLiteOpenHelper {
     private static final String DATABASE_NAME = "notes.db";
-    private static final int DATABASE_VERSION = 4;
+    private static final int DATABASE_VERSION = 5;
 
     public static final String TABLE_NOTES = "notes";
     public static final String COLUMN_ID = "_id";
@@ -38,6 +38,7 @@ public class NoteDbHelper extends SQLiteOpenHelper {
     public static final String KEY_COST_DISPLAY = "cost_display";
     public static final String KEY_COST_REQUIRED = "cost_required";
     public static final String KEY_TIME_DESC_ORDER = "time_desc_order";
+    public static final String KEY_FOLD_DISPLAY_LENGTH = "fold_display_length";
 
     private static final String DATABASE_CREATE = "create table "
             + TABLE_NOTES + "(" 
@@ -109,6 +110,11 @@ public class NoteDbHelper extends SQLiteOpenHelper {
         timeDescOrderSettings.put(COLUMN_SETTING_KEY, KEY_TIME_DESC_ORDER);
         timeDescOrderSettings.put(COLUMN_SETTING_VALUE, "true");
         database.insert(TABLE_SETTINGS, null, timeDescOrderSettings);
+        
+        ContentValues foldDisplayLengthSettings = new ContentValues();
+        foldDisplayLengthSettings.put(COLUMN_SETTING_KEY, KEY_FOLD_DISPLAY_LENGTH);
+        foldDisplayLengthSettings.put(COLUMN_SETTING_VALUE, "300");
+        database.insert(TABLE_SETTINGS, null, foldDisplayLengthSettings);
     }
 
     @Override
@@ -148,6 +154,17 @@ public class NoteDbHelper extends SQLiteOpenHelper {
                 costRequiredSettings.put(COLUMN_SETTING_KEY, KEY_COST_REQUIRED);
                 costRequiredSettings.put(COLUMN_SETTING_VALUE, "false");
                 db.insert(TABLE_SETTINGS, null, costRequiredSettings);
+            } catch (Exception e) {
+                // 忽略可能的重复插入错误
+            }
+        }
+        
+        if (oldVersion < 5) {
+            try {
+                ContentValues foldDisplayLengthSettings = new ContentValues();
+                foldDisplayLengthSettings.put(COLUMN_SETTING_KEY, KEY_FOLD_DISPLAY_LENGTH);
+                foldDisplayLengthSettings.put(COLUMN_SETTING_VALUE, "300");
+                db.insert(TABLE_SETTINGS, null, foldDisplayLengthSettings);
             } catch (Exception e) {
                 // 忽略可能的重复插入错误
             }
