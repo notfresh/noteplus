@@ -144,6 +144,9 @@ public class MainActivity extends AppCompatActivity {
 
     // 折叠状态管理
     private Set<Long> foldedNoteIds = new HashSet<>();
+    
+    // 追加内容展开状态管理
+    private Set<Long> expandedComments = new HashSet<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -714,6 +717,9 @@ public class MainActivity extends AppCompatActivity {
         // 添加标签信息
         addTagsInfo(extrasContainer, noteId);
         
+        // 添加追加内容信息
+        addCommentsInfo(extrasContainer, noteId);
+        
         // 如果配置显示花费且花费大于0，则在记录旁边显示花费
         if (showCost && cost > 0) {
             // 获取内容文本视图
@@ -757,11 +763,11 @@ public class MainActivity extends AppCompatActivity {
                     // 折叠状态：显示截断后的文本
                     String truncated = StringUtil.truncateToWordCount(content, foldDisplayLength);
                     displayText = truncated + "...";
-                    buttonText = "展开";
+                    buttonText = "展开记录";
                 } else {
                     // 展开状态：显示完整内容
                     displayText = content;
-                    buttonText = "折叠";
+                    buttonText = "折叠记录";
                 }
                 
                 // 设置内容文本（需要保留可能已添加的花费信息）
@@ -1066,6 +1072,355 @@ public class MainActivity extends AppCompatActivity {
     private int dpToPx(int dp) {
         float density = getResources().getDisplayMetrics().density;
         return Math.round(dp * density);
+    }
+    
+    /**
+     * 格式化评论时间戳（新格式：25/11/30 15:20）
+     */
+    private String formatCommentTimestamp(long timestamp) {
+        SimpleDateFormat sdf = new SimpleDateFormat("yy/MM/dd HH:mm", Locale.CHINA);
+        return sdf.format(new Date(timestamp));
+    }
+    
+    /**
+     * 添加追加内容信息到列表项
+     */
+    private void addCommentsInfo(LinearLayout container, long noteId) {
+        int commentCount = dbHelper.getCommentCount(noteId);
+        
+        // 创建追加内容容器（低调，无背景色，无边框）
+        LinearLayout commentsContainer = new LinearLayout(this);
+        commentsContainer.setOrientation(LinearLayout.VERTICAL);
+        commentsContainer.setPadding(0, dpToPx(4), 0, 0); // 减少内边距，更低调
+        
+        // 显示追加内容（如果有评论）
+        if (commentCount > 0) {
+            int maxDisplay = 3; // 默认显示3条
+            boolean needExpandCollapse = commentCount > 3;
+            boolean isExpanded = expandedComments.contains(noteId);
+            
+            if (needExpandCollapse && !isExpanded) {
+                maxDisplay = 3;
+            } else {
+                maxDisplay = Integer.MAX_VALUE;
+            }
+            
+            displayComments(commentsContainer, noteId, maxDisplay);
+        }
+        
+        // 创建底部操作行
+        LinearLayout actionLayout = new LinearLayout(this);
+        actionLayout.setOrientation(LinearLayout.HORIZONTAL);
+        actionLayout.setPadding(0, dpToPx(4), 0, 0);
+        LinearLayout.LayoutParams actionLayoutParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        actionLayout.setLayoutParams(actionLayoutParams);
+        
+        // 判断是否需要  追加内容的展开/折叠功能
+        boolean needExpandCollapse = commentCount > 3;
+        boolean isExpanded = expandedComments.contains(noteId);
+        
+        if (needExpandCollapse) {
+            // 添加展开/折叠按钮
+            TextView expandCollapseText = new TextView(this);
+            expandCollapseText.setText(isExpanded ? "收起追加" : "展开追加");
+            expandCollapseText.setTextColor(0xFF2196F3);
+            expandCollapseText.setTextSize(14);
+            LinearLayout.LayoutParams expandParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            expandCollapseText.setLayoutParams(expandParams);
+            
+            expandCollapseText.setOnClickListener(v -> {
+                toggleCommentsExpanded(noteId, commentsContainer);
+            });
+            
+            actionLayout.addView(expandCollapseText);
+        }
+        
+        // 添加"添加追加"按钮（与折叠按钮同一行，低调显示）
+        TextView addCommentButton = new TextView(this);
+        addCommentButton.setText("追加内容");
+        addCommentButton.setTextColor(0xFF2196F3);
+        addCommentButton.setTextSize(12);
+        LinearLayout.LayoutParams addButtonParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        addButtonParams.setMargins(needExpandCollapse ? dpToPx(8) : 0, 0, 0, 0);
+        addCommentButton.setLayoutParams(addButtonParams);
+        addCommentButton.setOnClickListener(v -> {
+            showAddCommentDialog(noteId, null);
+        });
+        actionLayout.addView(addCommentButton);
+        
+        commentsContainer.addView(actionLayout);
+        container.addView(commentsContainer);
+    }
+    
+    /**
+     * 切换追加内容的展开/折叠状态
+     */
+    private void toggleCommentsExpanded(long noteId, LinearLayout container) {
+        // 找到底部操作行的索引（最后一个子视图）
+        int actionLayoutIndex = container.getChildCount() - 1;
+        if (actionLayoutIndex < 0) {
+            return; // 如果没有操作行，直接返回
+        }
+        
+        // 移除所有评论内容（保留底部操作行）
+        // 操作行是最后一个，所以移除索引0到actionLayoutIndex-1的所有视图
+        // 从后往前移除，避免索引变化问题
+        for (int i = actionLayoutIndex - 1; i >= 0; i--) {
+            container.removeViewAt(i);
+        }
+        // 现在 container 只剩下操作行了
+        
+        if (expandedComments.contains(noteId)) {
+            // 当前是展开状态，切换到折叠状态（收起）
+            expandedComments.remove(noteId);
+            // 重新显示前3条（在操作行之前插入，索引0）
+            displayComments(container, noteId, 3);
+            // 更新展开/折叠按钮文本
+            updateExpandCollapseButton(container, false);
+        } else {
+            // 当前是折叠状态，切换到展开状态
+            expandedComments.add(noteId);
+            // 显示全部（在操作行之前插入，索引0）
+            displayComments(container, noteId, Integer.MAX_VALUE);
+            // 更新展开/折叠按钮文本
+            updateExpandCollapseButton(container, true);
+        }
+    }
+    
+    /**
+     * 更新展开/折叠按钮文本
+     */
+    private void updateExpandCollapseButton(LinearLayout container, boolean isExpanded) {
+        // 底部操作行是最后一个子视图
+        int actionLayoutIndex = container.getChildCount() - 1;
+        if (actionLayoutIndex >= 0) {
+            LinearLayout actionLayout = (LinearLayout) container.getChildAt(actionLayoutIndex);
+            if (actionLayout != null && actionLayout.getChildCount() > 0) {
+                TextView expandCollapseText = (TextView) actionLayout.getChildAt(0);
+                if (expandCollapseText != null) {
+                    expandCollapseText.setText(isExpanded ? "收起追加" : "展开追加");
+                }
+            }
+        }
+    }
+    
+    /**
+     * 显示追加内容
+     */
+    private void displayComments(LinearLayout container, long noteId, int maxDisplay) {
+        Cursor commentsCursor = dbHelper.getCommentsForNote(noteId);
+        
+        boolean hasComments = commentsCursor != null && commentsCursor.getCount() > 0;
+        
+        if (hasComments) {
+            // 不添加分隔线，更低调
+            
+            int count = 0;
+            
+            while (commentsCursor.moveToNext() && count < maxDisplay) {
+                long commentId = commentsCursor.getLong(
+                        commentsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_ID));
+                int parentIdIndex = commentsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_PARENT_COMMENT_ID);
+                String content = commentsCursor.getString(
+                        commentsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_CONTENT));
+                long timestamp = commentsCursor.getLong(
+                        commentsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_TIMESTAMP));
+                double cost = commentsCursor.getDouble(
+                        commentsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_COST));
+                
+                // 检查parent_comment_id是否为NULL
+                Long parentId = null;
+                if (!commentsCursor.isNull(parentIdIndex)) {
+                    parentId = commentsCursor.getLong(parentIdIndex);
+                }
+                
+                // 获取当前评论的编号（所有评论都按时间顺序编号）
+                int currentNumber = dbHelper.getCommentNumber(commentId);
+                
+                // 创建追加内容项
+                LinearLayout commentItem = new LinearLayout(this);
+                commentItem.setOrientation(LinearLayout.VERTICAL);
+                commentItem.setPadding(dpToPx(8), dpToPx(4), dpToPx(8), dpToPx(4));
+                
+                // 构建显示文本
+                String displayText;
+                if (parentId == null) {
+                    // 直接回复笔记：@编号 内容
+                    displayText = formatCommentTimestamp(timestamp) + " @" + currentNumber + " " + content;
+                } else {
+                    // 回复评论：@当前编号 追加@父编号 内容
+                    int parentNumber = dbHelper.getCommentNumber(parentId);
+                    if (parentNumber > 0) {
+                        displayText = formatCommentTimestamp(timestamp) + " @" + currentNumber + " 追加@" + parentNumber + " " + content;
+                    } else {
+                        // 如果找不到父评论编号，只显示当前编号
+                        displayText = formatCommentTimestamp(timestamp) + " @" + currentNumber + " " + content;
+                    }
+                }
+                
+                // 时间戳和编号
+                TextView timeText = new TextView(this);
+                timeText.setText(displayText);
+                timeText.setTextColor(0xFF333333);
+                timeText.setTextSize(14);
+                commentItem.addView(timeText);
+                
+                // 花费（如果有）
+                if (showCost && cost > 0) {
+                    TextView costText = new TextView(this);
+                    costText.setText(String.format("花费: ¥%.2f", cost));
+                    costText.setTextColor(0xFF4CAF50);
+                    costText.setTextSize(12);
+                    costText.setPadding(0, dpToPx(2), 0, 0);
+                    commentItem.addView(costText);
+                }
+                
+                // 添加"添加追加"按钮（回复该评论）- 样式与展开/折叠按钮一致
+                TextView addReplyButton = new TextView(this);
+                addReplyButton.setText("追加内容");
+                addReplyButton.setTextColor(0xFF2196F3); // 蓝色，与展开/折叠按钮一致
+                addReplyButton.setTextSize(12);
+                addReplyButton.setPadding(0, dpToPx(4), 0, 0);
+                LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                addReplyButton.setLayoutParams(buttonParams);
+                addReplyButton.setOnClickListener(v -> {
+                    showAddCommentDialog(noteId, commentId);
+                });
+                commentItem.addView(addReplyButton);
+                
+                // 长按删除
+                commentItem.setOnLongClickListener(v -> {
+                    showDeleteCommentDialog(commentId, noteId);
+                    return true;
+                });
+                
+                // 在操作行之前插入评论（操作行是最后一个，所以插入到倒数第二个位置）
+                int insertIndex = container.getChildCount() - 1;
+                container.addView(commentItem, insertIndex);
+                count++;
+            }
+            commentsCursor.close();
+        }
+        // 注意：不再在底部显示"添加追加"按钮，因为已经在标题行显示了
+    }
+    
+    /**
+     * 显示添加追加内容对话框
+     */
+    private void showAddCommentDialog(long noteId, Long parentCommentId) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle(parentCommentId == null ? "追加内容" : "回复追加");
+        
+        // 创建输入视图
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dpToPx(16), dpToPx(16), dpToPx(16), dpToPx(16));
+        
+        EditText contentEdit = new EditText(this);
+        contentEdit.setHint("输入追加内容...");
+        contentEdit.setMinLines(3);
+        contentEdit.setMaxLines(5);
+        contentEdit.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        layout.addView(contentEdit);
+        
+        // 可选：花费输入
+        EditText costEdit = new EditText(this);
+        costEdit.setHint("花费金额（可选）");
+        costEdit.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        layout.addView(costEdit);
+        
+        builder.setView(layout);
+        
+        builder.setPositiveButton("添加", (dialog, which) -> {
+            String content = contentEdit.getText().toString().trim();
+            if (content.isEmpty()) {
+                Toast.makeText(this, "请输入内容", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            
+            double cost = 0.0;
+            String costText = costEdit.getText().toString().trim();
+            if (!costText.isEmpty()) {
+                try {
+                    cost = Double.parseDouble(costText);
+                } catch (NumberFormatException e) {
+                    Toast.makeText(this, "花费金额格式不正确", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+            }
+            
+            // 保存追加内容
+            long commentId = dbHelper.addComment(noteId, parentCommentId, content, cost);
+            if (commentId != -1) {
+                Toast.makeText(this, "追加成功", Toast.LENGTH_SHORT).show();
+                // 刷新该笔记的显示
+                refreshNoteView(noteId);
+            } else {
+                Toast.makeText(this, "追加失败", Toast.LENGTH_SHORT).show();
+            }
+        });
+        
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
+    
+    /**
+     * 显示删除追加内容确认对话框
+     */
+    private void showDeleteCommentDialog(long commentId, long noteId) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("删除追加内容");
+        builder.setMessage("确定要删除这条追加内容吗？");
+        
+        builder.setPositiveButton("删除", (dialog, which) -> {
+            int result = dbHelper.deleteComment(commentId);
+            if (result > 0) {
+                Toast.makeText(this, "已删除", Toast.LENGTH_SHORT).show();
+                refreshNoteView(noteId);
+            } else {
+                Toast.makeText(this, "删除失败", Toast.LENGTH_SHORT).show();
+            }
+        });
+        
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
+    
+    /**
+     * 刷新指定笔记的视图
+     */
+    private void refreshNoteView(long noteId) {
+        // 找到该笔记在列表中的位置
+        if (noteListAdapter != null) {
+            for (int i = 0; i < noteListAdapter.getCount(); i++) {
+                Cursor cursor = (Cursor) noteListAdapter.getItem(i);
+                if (cursor != null) {
+                    long id = cursor.getLong(cursor.getColumnIndexOrThrow("_id"));
+                    if (id == noteId) {
+                        // 找到对应的视图
+                        int firstVisible = momentsListView.getFirstVisiblePosition();
+                        int lastVisible = momentsListView.getLastVisiblePosition();
+                        
+                        if (i >= firstVisible && i <= lastVisible) {
+                            View view = momentsListView.getChildAt(i - firstVisible);
+                            if (view != null) {
+                                double cost = cursor.getDouble(cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COST));
+                                updateListItemWithExtras(view, noteId, cost);
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
     }
 
 
@@ -2175,14 +2530,17 @@ public class MainActivity extends AppCompatActivity {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("选择操作");
         
-        String[] options = {"复制到剪切板", "删除"};
+        String[] options = {"复制到剪切板", "追加内容", "删除"};
         
         builder.setItems(options, (dialog, which) -> {
             switch (which) {
                 case 0: // 复制到剪切板
                     copyToClipboard(noteId);
                     break;
-                case 1: // 删除
+                case 1: // 添加追加（新增）
+                    showAddCommentDialog(noteId, null);
+                    break;
+                case 2: // 删除
                     showDeleteConfirmDialog(noteId);
                     break;
             }

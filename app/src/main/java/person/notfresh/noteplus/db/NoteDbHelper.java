@@ -8,7 +8,7 @@ import android.content.ContentValues;
 
 public class NoteDbHelper extends SQLiteOpenHelper {
     private static final String DATABASE_NAME = "notes.db";
-    private static final int DATABASE_VERSION = 5;
+    private static final int DATABASE_VERSION = 6;
 
     public static final String TABLE_NOTES = "notes";
     public static final String COLUMN_ID = "_id";
@@ -20,6 +20,7 @@ public class NoteDbHelper extends SQLiteOpenHelper {
     public static final String TABLE_TIME_RANGES = "time_ranges";
     public static final String TABLE_NOTE_TAGS = "note_tags";
     public static final String TABLE_SETTINGS = "settings";
+    public static final String TABLE_NOTE_COMMENTS = "note_comments";
 
     public static final String COLUMN_TAG_ID = "tag_id";
     public static final String COLUMN_TAG_NAME = "tag_name";
@@ -33,6 +34,14 @@ public class NoteDbHelper extends SQLiteOpenHelper {
     public static final String COLUMN_RECORD_ID = "record_id";
     public static final String COLUMN_SETTING_KEY = "key";
     public static final String COLUMN_SETTING_VALUE = "value";
+    
+    // 评论表字段
+    public static final String COLUMN_COMMENT_ID = "comment_id";
+    public static final String COLUMN_COMMENT_NOTE_ID = "note_id";
+    public static final String COLUMN_PARENT_COMMENT_ID = "parent_comment_id";
+    public static final String COLUMN_COMMENT_CONTENT = "content";
+    public static final String COLUMN_COMMENT_TIMESTAMP = "timestamp";
+    public static final String COLUMN_COMMENT_COST = "cost";
 
     public static final String KEY_TIME_RANGE_REQUIRED = "time_range_required";
     public static final String KEY_COST_DISPLAY = "cost_display";
@@ -169,6 +178,32 @@ public class NoteDbHelper extends SQLiteOpenHelper {
                 // 忽略可能的重复插入错误
             }
         }
+        
+        if (oldVersion < 6) {
+            // 创建评论表
+            String CREATE_NOTE_COMMENTS_TABLE = "CREATE TABLE IF NOT EXISTS " + TABLE_NOTE_COMMENTS + "("
+                    + COLUMN_COMMENT_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    + COLUMN_COMMENT_NOTE_ID + " INTEGER NOT NULL,"
+                    + COLUMN_PARENT_COMMENT_ID + " INTEGER DEFAULT NULL,"
+                    + COLUMN_COMMENT_CONTENT + " TEXT NOT NULL,"
+                    + COLUMN_COMMENT_TIMESTAMP + " INTEGER NOT NULL,"
+                    + COLUMN_COMMENT_COST + " REAL DEFAULT 0,"
+                    + "FOREIGN KEY (" + COLUMN_COMMENT_NOTE_ID + ") REFERENCES " + TABLE_NOTES + "(" + COLUMN_ID + ") ON DELETE CASCADE,"
+                    + "FOREIGN KEY (" + COLUMN_PARENT_COMMENT_ID + ") REFERENCES " + TABLE_NOTE_COMMENTS + "(" + COLUMN_COMMENT_ID + ") ON DELETE CASCADE"
+                    + ")";
+            
+            db.execSQL(CREATE_NOTE_COMMENTS_TABLE);
+            
+            // 创建索引
+            try {
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_note_comments_note_id ON " 
+                        + TABLE_NOTE_COMMENTS + "(" + COLUMN_COMMENT_NOTE_ID + ")");
+                db.execSQL("CREATE INDEX IF NOT EXISTS idx_note_comments_timestamp ON " 
+                        + TABLE_NOTE_COMMENTS + "(" + COLUMN_COMMENT_TIMESTAMP + ")");
+            } catch (Exception e) {
+                // 忽略索引已存在的错误
+            }
+        }
     }
 
     public Cursor getAllTags() {
@@ -302,5 +337,177 @@ public class NoteDbHelper extends SQLiteOpenHelper {
         cursor.close();
         
         return tagId;
+    }
+    
+    /**
+     * 添加评论（追加内容）
+     * @param noteId 笔记ID
+     * @param parentCommentId 父评论ID（null表示直接回复笔记，非null表示回复某个评论）
+     * @param content 评论内容
+     * @param cost 花费金额（可选）
+     * @return 评论ID，失败返回-1
+     */
+    public long addComment(long noteId, Long parentCommentId, String content, double cost) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put(COLUMN_COMMENT_NOTE_ID, noteId);
+        if (parentCommentId != null) {
+            values.put(COLUMN_PARENT_COMMENT_ID, parentCommentId);
+        }
+        values.put(COLUMN_COMMENT_CONTENT, content);
+        values.put(COLUMN_COMMENT_TIMESTAMP, System.currentTimeMillis());
+        values.put(COLUMN_COMMENT_COST, cost);
+        
+        return db.insert(TABLE_NOTE_COMMENTS, null, values);
+    }
+    
+    /**
+     * 获取笔记的所有评论（包括回复，按时间正序）
+     * @param noteId 笔记ID
+     * @return Cursor
+     */
+    public Cursor getCommentsForNote(long noteId) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        return db.query(
+                TABLE_NOTE_COMMENTS,
+                new String[]{
+                    COLUMN_COMMENT_ID,
+                    COLUMN_PARENT_COMMENT_ID,
+                    COLUMN_COMMENT_CONTENT,
+                    COLUMN_COMMENT_TIMESTAMP,
+                    COLUMN_COMMENT_COST
+                },
+                COLUMN_COMMENT_NOTE_ID + " = ?",
+                new String[]{String.valueOf(noteId)},
+                null, null,
+                COLUMN_COMMENT_TIMESTAMP + " ASC"  // 按时间正序
+        );
+    }
+    
+    /**
+     * 获取笔记的评论数量
+     * @param noteId 笔记ID
+     * @return 数量
+     */
+    public int getCommentCount(long noteId) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        Cursor cursor = db.query(
+                TABLE_NOTE_COMMENTS,
+                new String[]{"COUNT(*) as count"},
+                COLUMN_COMMENT_NOTE_ID + " = ?",
+                new String[]{String.valueOf(noteId)},
+                null, null, null
+        );
+        
+        int count = 0;
+        if (cursor != null && cursor.moveToFirst()) {
+            count = cursor.getInt(0);
+            cursor.close();
+        }
+        return count;
+    }
+    
+    /**
+     * 删除评论
+     * @param commentId 评论ID
+     * @return 删除的行数
+     */
+    public int deleteComment(long commentId) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        return db.delete(
+                TABLE_NOTE_COMMENTS,
+                COLUMN_COMMENT_ID + " = ?",
+                new String[]{String.valueOf(commentId)}
+        );
+    }
+    
+    /**
+     * 更新评论内容
+     * @param commentId 评论ID
+     * @param content 新内容
+     * @return 更新的行数
+     */
+    public int updateComment(long commentId, String content) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put(COLUMN_COMMENT_CONTENT, content);
+        
+        return db.update(
+                TABLE_NOTE_COMMENTS,
+                values,
+                COLUMN_COMMENT_ID + " = ?",
+                new String[]{String.valueOf(commentId)}
+        );
+    }
+    
+    /**
+     * 获取下一个评论编号（用于显示，只计算直接回复笔记的评论）
+     * @param noteId 笔记ID
+     * @return 下一个编号（从1开始）
+     */
+    public int getNextCommentNumber(long noteId) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        // 只统计parent_comment_id为NULL的评论（直接回复笔记的）
+        Cursor cursor = db.query(
+                TABLE_NOTE_COMMENTS,
+                new String[]{"COUNT(*) as count"},
+                COLUMN_COMMENT_NOTE_ID + " = ? AND " + COLUMN_PARENT_COMMENT_ID + " IS NULL",
+                new String[]{String.valueOf(noteId)},
+                null, null, null
+        );
+        
+        int count = 0;
+        if (cursor != null && cursor.moveToFirst()) {
+            count = cursor.getInt(0);
+            cursor.close();
+        }
+        return count + 1; // 下一个编号
+    }
+    
+    /**
+     * 根据评论ID获取评论编号（用于显示）
+     * 所有评论（包括回复）都按时间顺序编号，从1开始
+     * @param commentId 评论ID
+     * @return 评论编号，如果找不到返回-1
+     */
+    public int getCommentNumber(long commentId) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        
+        // 先获取评论信息
+        Cursor commentCursor = db.query(
+                TABLE_NOTE_COMMENTS,
+                new String[]{COLUMN_COMMENT_NOTE_ID, COLUMN_COMMENT_TIMESTAMP},
+                COLUMN_COMMENT_ID + " = ?",
+                new String[]{String.valueOf(commentId)},
+                null, null, null
+        );
+        
+        if (commentCursor == null || !commentCursor.moveToFirst()) {
+            if (commentCursor != null) {
+                commentCursor.close();
+            }
+            return -1;
+        }
+        
+        long noteId = commentCursor.getLong(commentCursor.getColumnIndexOrThrow(COLUMN_COMMENT_NOTE_ID));
+        long timestamp = commentCursor.getLong(commentCursor.getColumnIndexOrThrow(COLUMN_COMMENT_TIMESTAMP));
+        commentCursor.close();
+        
+        // 计算编号：统计该笔记中，时间戳小于等于当前评论的所有评论数量（包括回复）
+        Cursor countCursor = db.query(
+                TABLE_NOTE_COMMENTS,
+                new String[]{"COUNT(*) as count"},
+                COLUMN_COMMENT_NOTE_ID + " = ? AND " + COLUMN_COMMENT_TIMESTAMP + " <= ?",
+                new String[]{String.valueOf(noteId), String.valueOf(timestamp)},
+                null, null, null
+        );
+        
+        int number = 0;
+        if (countCursor != null && countCursor.moveToFirst()) {
+            number = countCursor.getInt(0);
+            countCursor.close();
+        }
+        
+        return number;
     }
 } 
