@@ -1286,9 +1286,9 @@ public class MainActivity extends AppCompatActivity {
                 });
                 commentItem.addView(addReplyButton);
                 
-                // 长按删除
+                // 长按显示选项菜单
                 commentItem.setOnLongClickListener(v -> {
-                    showDeleteCommentDialog(commentId, noteId);
+                    showCommentOptionsMenu(commentId, noteId);
                     return true;
                 });
                 
@@ -1360,6 +1360,62 @@ public class MainActivity extends AppCompatActivity {
         builder.setNegativeButton("取消", null);
         builder.show();
     }
+    
+    /**
+     * 显示评论选项菜单
+     * @param commentId 评论ID
+     * @param noteId 笔记ID
+     */
+    private void showCommentOptionsMenu(long commentId, long noteId) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("选择操作");
+        
+        String[] options = {"复制到剪切板", "删除"};
+        
+        builder.setItems(options, (dialog, which) -> {
+            switch (which) {
+                case 0: // 复制到剪切板
+                    copyCommentToClipboard(commentId);
+                    break;
+                case 1: // 删除
+                    showDeleteCommentDialog(commentId, noteId);
+                    break;
+            }
+        });
+        
+        AlertDialog dialog = builder.create();
+        dialog.show();
+        
+        // 设置对话框居中显示
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setGravity(Gravity.CENTER);
+        }
+    }
+    
+    /**
+     * 复制评论内容到剪切板
+     * @param commentId 评论ID
+     */
+    private void copyCommentToClipboard(long commentId) {
+        // 从数据库获取评论内容
+        String commentContent = dbHelper.getCommentContentById(commentId);
+        
+        if (commentContent != null && !commentContent.trim().isEmpty()) {
+            // 获取剪切板管理器
+            ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            ClipData clip = ClipData.newPlainText("追加内容", commentContent);
+            clipboard.setPrimaryClip(clip);
+            
+            // 显示成功提示
+            Toast.makeText(this, "已复制到剪切板", Toast.LENGTH_SHORT).show();
+        } else {
+            // 显示错误提示
+            Toast.makeText(this, "无法获取追加内容", Toast.LENGTH_SHORT).show();
+        }
+    }
+    
+    
     
     /**
      * 显示删除追加内容确认对话框

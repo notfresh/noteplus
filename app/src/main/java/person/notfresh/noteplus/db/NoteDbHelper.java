@@ -406,6 +406,36 @@ public class NoteDbHelper extends SQLiteOpenHelper {
         }
         return count;
     }
+
+    /**
+     * 根据评论ID获取评论内容
+     * @param commentId 评论ID
+     * @return 评论内容字符串，如果获取失败返回null
+     */
+    public String getCommentContentById(long commentId) {
+        SQLiteDatabase db = getReadableDatabase();
+        String content = null;
+        
+        Cursor cursor = db.query(
+            NoteDbHelper.TABLE_NOTE_COMMENTS,
+            new String[]{NoteDbHelper.COLUMN_COMMENT_CONTENT},
+            NoteDbHelper.COLUMN_COMMENT_ID + "=?",
+            new String[]{String.valueOf(commentId)},
+            null, null, null
+        );
+        
+        if (cursor != null && cursor.moveToFirst()) {
+            int contentIndex = cursor.getColumnIndex(NoteDbHelper.COLUMN_COMMENT_CONTENT);
+            if (contentIndex != -1) {
+                content = cursor.getString(contentIndex);
+            }
+            cursor.close();
+        }
+        
+        return content;
+    }
+
+
     
     /**
      * 删除评论
