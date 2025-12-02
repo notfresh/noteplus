@@ -12,6 +12,8 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.Random;
 import java.util.Set;
 import java.util.HashSet;
@@ -135,6 +137,9 @@ public class MainActivity extends AppCompatActivity {
     private ProjectContextManager projectManager;
     private NoteDbHelper dbHelper;
 
+    // 导入导出管理器
+    private person.notfresh.noteplus.manager.ImportExportManager importExportManager;
+
     // 添加通知助手
     private NotificationHelper notificationHelper;
 
@@ -161,6 +166,9 @@ public class MainActivity extends AppCompatActivity {
         projectManager = new ProjectContextManager(this);
         // 获取当前项目的数据库Helper
         dbHelper = projectManager.getCurrentDbHelper();
+        
+        // 初始化导入导出管理器
+        importExportManager = new person.notfresh.noteplus.manager.ImportExportManager(this, dbHelper, projectManager);
         
         // 更新标题栏显示当前项目 - 在设置ActionBar之后执行
         updateTitle();
@@ -1085,30 +1093,13 @@ public class MainActivity extends AppCompatActivity {
     /**
      * 添加追加内容信息到列表项
      */
-    private void addCommentsInfo(LinearLayout container, long noteId) {
-        int commentCount = dbHelper.getCommentCount(noteId);
-        
+    private void addCommentsInfo(LinearLayout extraContainer, long noteId) {
         // 创建追加内容容器（低调，无背景色，无边框）
         LinearLayout commentsContainer = new LinearLayout(this);
         commentsContainer.setOrientation(LinearLayout.VERTICAL);
         commentsContainer.setPadding(0, dpToPx(4), 0, 0); // 减少内边距，更低调
-        
-        // 显示追加内容（如果有评论）
-        if (commentCount > 0) {
-            int maxDisplay = 3; // 默认显示3条
-            boolean needExpandCollapse = commentCount > 3;
-            boolean isExpanded = expandedComments.contains(noteId);
-            
-            if (needExpandCollapse && !isExpanded) {
-                maxDisplay = 3;
-            } else {
-                maxDisplay = Integer.MAX_VALUE;
-            }
-            
-            displayComments(commentsContainer, noteId, maxDisplay);
-        }
-        
-        // 创建底部操作行
+
+        // 创建操作行
         LinearLayout actionLayout = new LinearLayout(this);
         actionLayout.setOrientation(LinearLayout.HORIZONTAL);
         actionLayout.setPadding(0, dpToPx(4), 0, 0);
@@ -1116,11 +1107,28 @@ public class MainActivity extends AppCompatActivity {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
         actionLayout.setLayoutParams(actionLayoutParams);
-        
+
+        // 添加"添加追加"按钮
+        TextView addCommentButton = new TextView(this);
+        addCommentButton.setText("追加内容");
+        addCommentButton.setTextColor(0xFF2196F3);
+        addCommentButton.setTextSize(14);
+        LinearLayout.LayoutParams addButtonParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        addButtonParams.setMargins(0, 0, 0, 0);
+        addCommentButton.setLayoutParams(addButtonParams);
+        addCommentButton.setOnClickListener(v -> {
+            showAddCommentDialog(noteId, null);
+        });
+        actionLayout.addView(addCommentButton);
+        commentsContainer.addView(actionLayout);
+
+        int commentCount = dbHelper.getCommentCount(noteId);
         // 判断是否需要  追加内容的展开/折叠功能
         boolean needExpandCollapse = commentCount > 3;
         boolean isExpanded = expandedComments.contains(noteId);
-        
+
         if (needExpandCollapse) {
             // 添加展开/折叠按钮
             TextView expandCollapseText = new TextView(this);
@@ -1130,66 +1138,54 @@ public class MainActivity extends AppCompatActivity {
             LinearLayout.LayoutParams expandParams = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT);
+            expandParams.setMargins(dpToPx(4), 0, 0, 0);
             expandCollapseText.setLayoutParams(expandParams);
-            
+
             expandCollapseText.setOnClickListener(v -> {
                 toggleCommentsExpanded(noteId, commentsContainer);
             });
-            
             actionLayout.addView(expandCollapseText);
         }
+        // 显示追加内容（如果有评论）
+        if (commentCount > 0) {
+            int maxDisplay = 3; // 默认显示3条
+            if (needExpandCollapse && isExpanded) {
+                maxDisplay = Integer.MAX_VALUE;
+            }
+            displayComments(commentsContainer, noteId, maxDisplay);
+        }
         
-        // 添加"添加追加"按钮（与折叠按钮同一行，低调显示）
-        TextView addCommentButton = new TextView(this);
-        addCommentButton.setText("追加内容");
-        addCommentButton.setTextColor(0xFF2196F3);
-        addCommentButton.setTextSize(12);
-        LinearLayout.LayoutParams addButtonParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        addButtonParams.setMargins(needExpandCollapse ? dpToPx(8) : 0, 0, 0, 0);
-        addCommentButton.setLayoutParams(addButtonParams);
-        addCommentButton.setOnClickListener(v -> {
-            showAddCommentDialog(noteId, null);
-        });
-        actionLayout.addView(addCommentButton);
-        
-        commentsContainer.addView(actionLayout);
-        container.addView(commentsContainer);
+        extraContainer.addView(commentsContainer);
     }
     
     /**
      * 切换追加内容的展开/折叠状态
      */
-    private void toggleCommentsExpanded(long noteId, LinearLayout container) {
+    private void toggleCommentsExpanded(long noteId, LinearLayout commentContainer) {
         // 找到底部操作行的索引（最后一个子视图）
-        int actionLayoutIndex = container.getChildCount() - 1;
-        if (actionLayoutIndex < 0) {
-            return; // 如果没有操作行，直接返回
-        }
-        
+        int actionLayoutIndex = 0;
+
         // 移除所有评论内容（保留底部操作行）
         // 操作行是最后一个，所以移除索引0到actionLayoutIndex-1的所有视图
         // 从后往前移除，避免索引变化问题
-        for (int i = actionLayoutIndex - 1; i >= 0; i--) {
-            container.removeViewAt(i);
+        for (int i = commentContainer.getChildCount()-1 ; i>=1 ; i--) {
+            commentContainer.removeViewAt(i);
         }
         // 现在 container 只剩下操作行了
-        
         if (expandedComments.contains(noteId)) {
             // 当前是展开状态，切换到折叠状态（收起）
             expandedComments.remove(noteId);
             // 重新显示前3条（在操作行之前插入，索引0）
-            displayComments(container, noteId, 3);
+            displayComments(commentContainer, noteId, 3);
             // 更新展开/折叠按钮文本
-            updateExpandCollapseButton(container, false);
+            updateExpandCollapseButton(commentContainer, false);
         } else {
             // 当前是折叠状态，切换到展开状态
             expandedComments.add(noteId);
             // 显示全部（在操作行之前插入，索引0）
-            displayComments(container, noteId, Integer.MAX_VALUE);
+            displayComments(commentContainer, noteId, Integer.MAX_VALUE);
             // 更新展开/折叠按钮文本
-            updateExpandCollapseButton(container, true);
+            updateExpandCollapseButton(commentContainer, true);
         }
     }
     
@@ -1197,15 +1193,12 @@ public class MainActivity extends AppCompatActivity {
      * 更新展开/折叠按钮文本
      */
     private void updateExpandCollapseButton(LinearLayout container, boolean isExpanded) {
-        // 底部操作行是最后一个子视图
-        int actionLayoutIndex = container.getChildCount() - 1;
-        if (actionLayoutIndex >= 0) {
-            LinearLayout actionLayout = (LinearLayout) container.getChildAt(actionLayoutIndex);
-            if (actionLayout != null && actionLayout.getChildCount() > 0) {
-                TextView expandCollapseText = (TextView) actionLayout.getChildAt(0);
-                if (expandCollapseText != null) {
-                    expandCollapseText.setText(isExpanded ? "收起追加" : "展开追加");
-                }
+        int actionLayoutIndex = 0;
+        LinearLayout actionLayout = (LinearLayout) container.getChildAt(actionLayoutIndex);
+        if (actionLayout != null && actionLayout.getChildCount() > 1) {
+            TextView expandCollapseText = (TextView) actionLayout.getChildAt(1);
+            if (expandCollapseText != null) {
+                expandCollapseText.setText(isExpanded ? "收起追加" : "展开追加");
             }
         }
     }
@@ -1233,16 +1226,13 @@ public class MainActivity extends AppCompatActivity {
                         commentsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_TIMESTAMP));
                 double cost = commentsCursor.getDouble(
                         commentsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_COST));
-                
                 // 检查parent_comment_id是否为NULL
                 Long parentId = null;
                 if (!commentsCursor.isNull(parentIdIndex)) {
                     parentId = commentsCursor.getLong(parentIdIndex);
                 }
-                
                 // 获取当前评论的编号（所有评论都按时间顺序编号）
                 int currentNumber = dbHelper.getCommentNumber(commentId);
-                
                 // 创建追加内容项
                 LinearLayout commentItem = new LinearLayout(this);
                 commentItem.setOrientation(LinearLayout.VERTICAL);
@@ -1283,7 +1273,7 @@ public class MainActivity extends AppCompatActivity {
                 
                 // 添加"添加追加"按钮（回复该评论）- 样式与展开/折叠按钮一致
                 TextView addReplyButton = new TextView(this);
-                addReplyButton.setText("追加内容");
+                addReplyButton.setText("回复追加");
                 addReplyButton.setTextColor(0xFF2196F3); // 蓝色，与展开/折叠按钮一致
                 addReplyButton.setTextSize(12);
                 addReplyButton.setPadding(0, dpToPx(4), 0, 0);
@@ -1303,13 +1293,12 @@ public class MainActivity extends AppCompatActivity {
                 });
                 
                 // 在操作行之前插入评论（操作行是最后一个，所以插入到倒数第二个位置）
-                int insertIndex = container.getChildCount() - 1;
-                container.addView(commentItem, insertIndex);
+                //int insertIndex = container.getChildCount() - 1;
+                container.addView(commentItem); //insertIndex
                 count++;
             }
             commentsCursor.close();
         }
-        // 注意：不再在底部显示"添加追加"按钮，因为已经在标题行显示了
     }
     
     /**
@@ -1909,6 +1898,10 @@ public class MainActivity extends AppCompatActivity {
                 }
                 dbHelper = projectManager.getCurrentDbHelper();
                 
+                // 更新导入导出管理器
+                importExportManager = new person.notfresh.noteplus.manager.ImportExportManager(
+                    MainActivity.this, dbHelper, projectManager);
+                
                 // 回到主线程更新UI
                 runOnUiThread(() -> {
                     updateTitle();
@@ -2261,141 +2254,14 @@ public class MainActivity extends AppCompatActivity {
      * 写入CSV数据
      */
     private void writeCsvData(OutputStream outputStream) throws IOException {
-        SQLiteDatabase db = dbHelper.getReadableDatabase();
-        
-        // 获取所有记录
-        Cursor notesCursor = db.query(
-                NoteDbHelper.TABLE_NOTES,
-                new String[]{"_id", NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP, NoteDbHelper.COLUMN_COST},
-                null, null, null, null,
-                NoteDbHelper.COLUMN_TIMESTAMP + " DESC"
-        );
-        
-        OutputStreamWriter writer = new OutputStreamWriter(outputStream, StandardCharsets.UTF_8);
-        
-        // 写入CSV头
-        writer.write("ID,内容,时间戳,花费,开始时间,结束时间,标签\n");
-        
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
-        
-        // 写入记录
-        while (notesCursor.moveToNext()) {
-            long noteId = notesCursor.getLong(notesCursor.getColumnIndexOrThrow("_id"));
-            String content = notesCursor.getString(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_CONTENT));
-            long timestamp = notesCursor.getLong(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TIMESTAMP));
-            double cost = notesCursor.getDouble(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COST));
-            
-            // 处理CSV中的特殊字符
-            content = "\"" + content.replace("\"", "\"\"") + "\"";
-            
-            StringBuilder line = new StringBuilder();
-            line.append(noteId).append(",");
-            line.append(content).append(",");
-            line.append(sdf.format(new Date(timestamp))).append(",");
-            line.append(cost).append(",");
-            
-            // 获取时间范围
-            Cursor timeRangeCursor = dbHelper.getTimeRangesForNote(noteId);
-            if (timeRangeCursor.moveToFirst()) {
-                long startTime = timeRangeCursor.getLong(timeRangeCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_START_TIME));
-                long endTime = timeRangeCursor.getLong(timeRangeCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_END_TIME));
-                line.append(sdf.format(new Date(startTime))).append(",");
-                line.append(sdf.format(new Date(endTime))).append(",");
-            } else {
-                line.append(",,");
-            }
-            timeRangeCursor.close();
-            
-            // 获取标签
-            Cursor tagsCursor = dbHelper.getTagsForNote(noteId);
-            StringBuilder tags = new StringBuilder();
-            while (tagsCursor.moveToNext()) {
-                if (tags.length() > 0) {
-                    tags.append(";");
-                }
-                tags.append(tagsCursor.getString(tagsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TAG_NAME)));
-            }
-            line.append("\"").append(tags).append("\"");
-            tagsCursor.close();
-            
-            writer.write(line.toString() + "\n");
-        }
-        
-        notesCursor.close();
-        writer.flush();
+        importExportManager.writeCsvData(outputStream);
     }
 
     /**
      * 写入JSON数据
      */
     private void writeJsonData(OutputStream outputStream) throws IOException, JSONException {
-        SQLiteDatabase db = dbHelper.getReadableDatabase();
-        
-        // 获取所有记录
-        Cursor notesCursor = db.query(
-                NoteDbHelper.TABLE_NOTES,
-                new String[]{"_id", NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP, NoteDbHelper.COLUMN_COST},
-                null, null, null, null,
-                NoteDbHelper.COLUMN_TIMESTAMP + " DESC"
-        );
-        
-        JSONArray notesArray = new JSONArray();
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
-        
-        // 构建记录
-        while (notesCursor.moveToNext()) {
-            JSONObject noteObject = new JSONObject();
-            
-            long noteId = notesCursor.getLong(notesCursor.getColumnIndexOrThrow("_id"));
-            String content = notesCursor.getString(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_CONTENT));
-            long timestamp = notesCursor.getLong(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TIMESTAMP));
-            double cost = notesCursor.getDouble(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COST));
-            
-            noteObject.put("id", noteId);
-            noteObject.put("content", content);
-            noteObject.put("timestamp", sdf.format(new Date(timestamp)));
-            noteObject.put("cost", cost);
-            
-            // 获取时间范围
-            Cursor timeRangeCursor = dbHelper.getTimeRangesForNote(noteId);
-            if (timeRangeCursor.moveToFirst()) {
-                JSONObject timeRange = new JSONObject();
-                long startTime = timeRangeCursor.getLong(timeRangeCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_START_TIME));
-                long endTime = timeRangeCursor.getLong(timeRangeCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_END_TIME));
-                
-                timeRange.put("start", sdf.format(new Date(startTime)));
-                timeRange.put("end", sdf.format(new Date(endTime)));
-                noteObject.put("timeRange", timeRange);
-            }
-            timeRangeCursor.close();
-            
-            // 获取标签
-            Cursor tagsCursor = dbHelper.getTagsForNote(noteId);
-            JSONArray tagsArray = new JSONArray();
-            while (tagsCursor.moveToNext()) {
-                JSONObject tagObject = new JSONObject();
-                tagObject.put("name", tagsCursor.getString(tagsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TAG_NAME)));
-                tagObject.put("color", tagsCursor.getString(tagsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TAG_COLOR)));
-                tagsArray.put(tagObject);
-            }
-            tagsCursor.close();
-            
-            noteObject.put("tags", tagsArray);
-            notesArray.put(noteObject);
-        }
-        
-        notesCursor.close();
-        
-        // 创建根JSON对象
-        JSONObject rootObject = new JSONObject();
-        rootObject.put("projectName", projectManager.getCurrentProject());
-        rootObject.put("exportDate", sdf.format(new Date()));
-        rootObject.put("notes", notesArray);
-        
-        // 写入数据
-        OutputStreamWriter writer = new OutputStreamWriter(outputStream);
-        writer.write(rootObject.toString(2)); // 格式化JSON输出
-        writer.flush();
+        importExportManager.writeJsonData(outputStream);
     }
 
     /**
@@ -2992,6 +2858,10 @@ public class MainActivity extends AppCompatActivity {
                 }
                 dbHelper = projectManager.getCurrentDbHelper();
                 
+                // 更新导入导出管理器
+                importExportManager = new person.notfresh.noteplus.manager.ImportExportManager(
+                    MainActivity.this, dbHelper, projectManager);
+                
                 // 回到主线程更新UI并开始导入
                 runOnUiThread(() -> {
                     updateTitle();
@@ -3042,123 +2912,22 @@ public class MainActivity extends AppCompatActivity {
         // 在后台线程执行导入操作
         new Thread(() -> {
             try {
-                ContentResolver resolver = getContentResolver();
-                java.io.InputStream inputStream = resolver.openInputStream(uri);
-                if (inputStream == null) {
-                    runOnUiThread(() -> {
-                        progressDialog.dismiss();
-                        Toast.makeText(this, "无法读取文件", Toast.LENGTH_SHORT).show();
-                    });
-                    return;
-                }
+                person.notfresh.noteplus.manager.ImportExportManager.ImportResult result = 
+                    importExportManager.readCsvData(uri);
                 
-                java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(inputStream));
-                String line;
-                int importedCount = 0;
-                int skippedCount = 0;
+                final int finalImportedCount = result.importedCount;
+                final int finalSkippedCount = result.skippedCount;
                 
-                // 跳过标题行
-                reader.readLine();
-                
-                SQLiteDatabase db = dbHelper.getWritableDatabase();
-                db.beginTransaction();
-                
-                try {
-                    while ((line = reader.readLine()) != null) {
-                        if (line.trim().isEmpty()) continue;
-                        
-                        try {
-                            // 解析CSV行
-                            String[] fields = parseCsvLine(line);
-                            if (fields.length >= 3) {
-                                // 解析字段 - 格式：ID,内容,时间戳,花费,开始时间,结束时间,标签
-                                long noteId = Long.parseLong(fields[0]);
-                                String content = fields[1].replace("\"\"", "\""); // 处理转义的双引号
-                                String timestampStr = fields[2];
-                                
-                                // 解析时间戳
-                                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
-                                long timestamp = sdf.parse(timestampStr).getTime();
-                                
-                                // 插入笔记
-                                ContentValues noteValues = new ContentValues();
-                                noteValues.put(NoteDbHelper.COLUMN_CONTENT, content);
-                                noteValues.put(NoteDbHelper.COLUMN_TIMESTAMP, timestamp);
-                                
-                                // 处理花费信息 (字段3)
-                                if (fields.length > 3 && !fields[3].isEmpty()) {
-                                    try {
-                                        double cost = Double.parseDouble(fields[3]);
-                                        noteValues.put(NoteDbHelper.COLUMN_COST, cost);
-                                    } catch (NumberFormatException e) {
-                                        // 花费解析失败，使用默认值0
-                                        noteValues.put(NoteDbHelper.COLUMN_COST, 0.0);
-                                    }
-                                }
-                                
-                                long newNoteId = db.insert(NoteDbHelper.TABLE_NOTES, null, noteValues);
-                                
-                                // 处理时间范围 (字段4和5)
-                                if (fields.length > 6 && !fields[4].isEmpty() && !fields[5].isEmpty()) {
-                                    try {
-                                        long startTime = sdf.parse(fields[4]).getTime();
-                                        long endTime = sdf.parse(fields[5]).getTime();
-                                        dbHelper.saveTimeRange(newNoteId, startTime, endTime);
-                                    } catch (Exception e) {
-                                        // 时间范围解析失败，跳过
-                                    }
-                                }
-                                
-                                // 处理标签 (字段6)
-                                if (fields.length > 6 && !fields[6].isEmpty()) {
-                                    String tagsStr = fields[6].replace("\"", "");
-                                    String[] tagNames = tagsStr.split(";");
-                                    for (String tagName : tagNames) {
-                                        if (!tagName.trim().isEmpty()) {
-                                            // 检查标签是否存在，不存在则创建
-                                            long tagId = dbHelper.getTagIdByName(tagName.trim());
-                                            if (tagId == -1) {
-                                                // 创建新标签
-                                                String[] colors = {"#FF5722", "#9C27B0", "#2196F3", "#4CAF50", "#FFC107", "#607D8B"};
-                                                String randomColor = colors[new Random().nextInt(colors.length)];
-                                                tagId = dbHelper.addTag(tagName.trim(), randomColor);
-                                            }
-                                            if (tagId != -1) {
-                                                dbHelper.linkNoteToTag(newNoteId, tagId);
-                                            }
-                                        }
-                                    }
-                                }
-                                
-                                importedCount++;
-                            }
-                        } catch (Exception e) {
-                            skippedCount++;
-                            e.printStackTrace();
-                        }
+                runOnUiThread(() -> {
+                    progressDialog.dismiss();
+                    String currentProject = projectManager.getCurrentProject();
+                    String message = String.format("导入完成！成功导入 %d 条记录到项目 \"%s\"", finalImportedCount, currentProject);
+                    if (finalSkippedCount > 0) {
+                        message += String.format("，跳过 %d 条记录", finalSkippedCount);
                     }
-                    
-                    db.setTransactionSuccessful();
-                    
-                    final int finalImportedCount = importedCount;
-                    final int finalSkippedCount = skippedCount;
-                    
-                    runOnUiThread(() -> {
-                        progressDialog.dismiss();
-                        String currentProject = projectManager.getCurrentProject();
-                        String message = String.format("导入完成！成功导入 %d 条记录到项目 \"%s\"", finalImportedCount, currentProject);
-                        if (finalSkippedCount > 0) {
-                            message += String.format("，跳过 %d 条记录", finalSkippedCount);
-                        }
-                        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
-                        loadMoments(); // 刷新列表
-                    });
-                    
-                } finally {
-                    db.endTransaction();
-                    reader.close();
-                    inputStream.close();
-                }
+                    Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+                    loadMoments(); // 刷新列表
+                });
                 
             } catch (Exception e) {
                 e.printStackTrace();
@@ -3180,118 +2949,22 @@ public class MainActivity extends AppCompatActivity {
         // 在后台线程执行导入操作
         new Thread(() -> {
             try {
-                ContentResolver resolver = getContentResolver();
-                java.io.InputStream inputStream = resolver.openInputStream(uri);
-                if (inputStream == null) {
-                    runOnUiThread(() -> {
-                        progressDialog.dismiss();
-                        Toast.makeText(this, "无法读取文件", Toast.LENGTH_SHORT).show();
-                    });
-                    return;
-                }
+                person.notfresh.noteplus.manager.ImportExportManager.ImportResult result = 
+                    importExportManager.readJsonData(uri);
                 
-                // 读取JSON内容
-                java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(inputStream));
-                StringBuilder jsonString = new StringBuilder();
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    jsonString.append(line);
-                }
+                final int finalImportedCount = result.importedCount;
+                final int finalSkippedCount = result.skippedCount;
                 
-                JSONObject rootObject = new JSONObject(jsonString.toString());
-                JSONArray notesArray = rootObject.getJSONArray("notes");
-                
-                int importedCount = 0;
-                int skippedCount = 0;
-                
-                SQLiteDatabase db = dbHelper.getWritableDatabase();
-                db.beginTransaction();
-                
-                try {
-                    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
-                    
-                    for (int i = 0; i < notesArray.length(); i++) {
-                        try {
-                            JSONObject noteObject = notesArray.getJSONObject(i);
-                            
-                            // 解析笔记基本信息
-                            String content = noteObject.getString("content");
-                            String timestampStr = noteObject.getString("timestamp");
-                            long timestamp = sdf.parse(timestampStr).getTime();
-                            
-                            // 插入笔记
-                            ContentValues noteValues = new ContentValues();
-                            noteValues.put(NoteDbHelper.COLUMN_CONTENT, content);
-                            noteValues.put(NoteDbHelper.COLUMN_TIMESTAMP, timestamp);
-                            
-                            // 处理花费信息
-                            if (noteObject.has("cost")) {
-                                double cost = noteObject.getDouble("cost");
-                                noteValues.put(NoteDbHelper.COLUMN_COST, cost);
-                            }
-                            
-                            long newNoteId = db.insert(NoteDbHelper.TABLE_NOTES, null, noteValues);
-                            
-                            // 处理时间范围
-                            if (noteObject.has("timeRange")) {
-                                JSONObject timeRange = noteObject.getJSONObject("timeRange");
-                                String startTimeStr = timeRange.getString("start");
-                                String endTimeStr = timeRange.getString("end");
-                                
-                                long startTime = sdf.parse(startTimeStr).getTime();
-                                long endTime = sdf.parse(endTimeStr).getTime();
-                                dbHelper.saveTimeRange(newNoteId, startTime, endTime);
-                            }
-                            
-                            // 处理标签
-                            if (noteObject.has("tags")) {
-                                JSONArray tagsArray = noteObject.getJSONArray("tags");
-                                for (int j = 0; j < tagsArray.length(); j++) {
-                                    JSONObject tagObject = tagsArray.getJSONObject(j);
-                                    String tagName = tagObject.getString("name");
-                                    String tagColor = tagObject.getString("color");
-                                    
-                                    // 检查标签是否存在
-                                    long tagId = dbHelper.getTagIdByName(tagName);
-                                    if (tagId == -1) {
-                                        // 创建新标签
-                                        tagId = dbHelper.addTag(tagName, tagColor);
-                                    }
-                                    if (tagId != -1) {
-                                        dbHelper.linkNoteToTag(newNoteId, tagId);
-                                    }
-                                }
-                            }
-                            
-                            importedCount++;
-                            
-                        } catch (Exception e) {
-                            skippedCount++;
-                            e.printStackTrace();
-                        }
+                runOnUiThread(() -> {
+                    progressDialog.dismiss();
+                    String currentProject = projectManager.getCurrentProject();
+                    String message = String.format("导入完成！成功导入 %d 条记录到项目 \"%s\"", finalImportedCount, currentProject);
+                    if (finalSkippedCount > 0) {
+                        message += String.format("，跳过 %d 条记录", finalSkippedCount);
                     }
-                    
-                    db.setTransactionSuccessful();
-                    
-                    final int finalImportedCount = importedCount;
-                    final int finalSkippedCount = skippedCount;
-                    
-                    runOnUiThread(() -> {
-                        progressDialog.dismiss();
-                        String currentProject = projectManager.getCurrentProject();
-                        String message = String.format("导入完成！成功导入 %d 条记录到项目 \"%s\"", finalImportedCount, currentProject);
-                        if (finalSkippedCount > 0) {
-                            message += String.format("，跳过 %d 条记录", finalSkippedCount);
-                        }
-                        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
-                        loadMoments(); // 刷新列表
-                    });
-                    
-                } finally {
-                    db.endTransaction();
-                    reader.close();
-                    inputStream.close();
-                }
+                    Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+                    loadMoments(); // 刷新列表
+                });
                 
             } catch (Exception e) {
                 e.printStackTrace();
@@ -3303,40 +2976,6 @@ public class MainActivity extends AppCompatActivity {
         }).start();
     }
 
-    /**
-     * 解析CSV行，处理引号内的逗号
-     */
-    private String[] parseCsvLine(String line) {
-        List<String> fields = new ArrayList<>();
-        StringBuilder currentField = new StringBuilder();
-        boolean inQuotes = false;
-        
-        for (int i = 0; i < line.length(); i++) {
-            char c = line.charAt(i);
-            
-            if (c == '"') {
-                if (inQuotes && i + 1 < line.length() && line.charAt(i + 1) == '"') {
-                    // 转义的双引号
-                    currentField.append('"');
-                    i++; // 跳过下一个引号
-                } else {
-                    // 切换引号状态
-                    inQuotes = !inQuotes;
-                }
-            } else if (c == ',' && !inQuotes) {
-                // 字段分隔符
-                fields.add(currentField.toString());
-                currentField = new StringBuilder();
-            } else {
-                currentField.append(c);
-            }
-        }
-        
-        // 添加最后一个字段
-        fields.add(currentField.toString());
-        
-        return fields.toArray(new String[0]);
-    }
 
     /**
      * 切换多选模式
@@ -3544,7 +3183,70 @@ public class MainActivity extends AppCompatActivity {
                                     }
                                     tagsCursor.close();
                                     
-                                    // 5. 从源数据库删除记录
+                                    // 5. 复制评论（追加内容）
+                                    // 由于评论可能有嵌套关系，需要维护ID映射
+                                    Map<Long, Long> commentIdMap = new HashMap<>();
+                                    Cursor commentsCursor = sourceDb.query(
+                                        NoteDbHelper.TABLE_NOTE_COMMENTS,
+                                        new String[]{
+                                            NoteDbHelper.COLUMN_COMMENT_ID,
+                                            NoteDbHelper.COLUMN_PARENT_COMMENT_ID,
+                                            NoteDbHelper.COLUMN_COMMENT_CONTENT,
+                                            NoteDbHelper.COLUMN_COMMENT_TIMESTAMP,
+                                            NoteDbHelper.COLUMN_COMMENT_COST
+                                        },
+                                        NoteDbHelper.COLUMN_COMMENT_NOTE_ID + " = ?",
+                                        new String[]{String.valueOf(noteId)},
+                                        null, null,
+                                        NoteDbHelper.COLUMN_COMMENT_TIMESTAMP + " ASC"  // 按时间正序，确保父评论先复制
+                                    );
+                                    
+                                    while (commentsCursor.moveToNext()) {
+                                        long oldCommentId = commentsCursor.getLong(
+                                            commentsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_ID));
+                                        int parentIdIndex = commentsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_PARENT_COMMENT_ID);
+                                        String commentContent = commentsCursor.getString(
+                                            commentsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_CONTENT));
+                                        long commentTimestamp = commentsCursor.getLong(
+                                            commentsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_TIMESTAMP));
+                                        double commentCost = commentsCursor.getDouble(
+                                            commentsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_COST));
+                                        
+                                        // 获取父评论ID（可能为NULL）
+                                        Long oldParentCommentId = null;
+                                        if (!commentsCursor.isNull(parentIdIndex)) {
+                                            oldParentCommentId = commentsCursor.getLong(parentIdIndex);
+                                        }
+                                        
+                                        // 映射父评论ID到新的ID
+                                        Long newParentCommentId = null;
+                                        if (oldParentCommentId != null) {
+                                            newParentCommentId = commentIdMap.get(oldParentCommentId);
+                                            // 如果找不到映射，说明数据有问题，跳过这条评论
+                                            if (newParentCommentId == null) {
+                                                continue;
+                                            }
+                                        }
+                                        
+                                        // 插入评论到目标数据库
+                                        ContentValues commentValues = new ContentValues();
+                                        commentValues.put(NoteDbHelper.COLUMN_COMMENT_NOTE_ID, newNoteId);
+                                        if (newParentCommentId != null) {
+                                            commentValues.put(NoteDbHelper.COLUMN_PARENT_COMMENT_ID, newParentCommentId);
+                                        }
+                                        commentValues.put(NoteDbHelper.COLUMN_COMMENT_CONTENT, commentContent);
+                                        commentValues.put(NoteDbHelper.COLUMN_COMMENT_TIMESTAMP, commentTimestamp);
+                                        commentValues.put(NoteDbHelper.COLUMN_COMMENT_COST, commentCost);
+                                        
+                                        long newCommentId = targetDb.insert(NoteDbHelper.TABLE_NOTE_COMMENTS, null, commentValues);
+                                        if (newCommentId != -1) {
+                                            // 保存ID映射
+                                            commentIdMap.put(oldCommentId, newCommentId);
+                                        }
+                                    }
+                                    commentsCursor.close();
+                                    
+                                    // 6. 从源数据库删除记录
                                     sourceDb.delete(NoteDbHelper.TABLE_NOTES, "_id = ?", new String[]{String.valueOf(noteId)});
                                     
                                     movedCount++;
