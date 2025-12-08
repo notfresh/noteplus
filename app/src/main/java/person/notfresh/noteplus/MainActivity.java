@@ -31,6 +31,9 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.MotionEvent;
 import android.provider.MediaStore;
 import android.provider.Settings;
 import android.view.Menu;
@@ -1551,6 +1554,11 @@ public class MainActivity extends AppCompatActivity {
             menu.findItem(R.id.action_recycle_bin).setVisible(true);
         }
         
+        // 延迟设置项目切换按钮的长按监听（确保 View 已创建）
+        new Handler(Looper.getMainLooper()).post(() -> {
+            setupProjectSwitchLongPress();
+        });
+        
         return true;
     }
     
@@ -2024,6 +2032,138 @@ public class MainActivity extends AppCompatActivity {
                 });
             }
         }).start();
+    }
+
+    /**
+     * 设置项目切换按钮的长按监听
+     */
+    private void setupProjectSwitchLongPress() {
+        Toolbar toolbar = findViewById(R.id.toolbar);
+        if (toolbar == null) return;
+        
+        // 延迟一点时间，确保菜单项 View 已经创建
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            // 通过遍历 Toolbar 的所有子 View 查找菜单项
+            findAndSetupMenuItemView(toolbar, R.id.action_switch_project);
+        }, 100);
+    }
+
+    /**
+     * 递归查找指定 ID 的菜单项 View 并设置长按监听
+     */
+    private void findAndSetupMenuItemView(ViewGroup parent, int menuItemId) {
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            View child = parent.getChildAt(i);
+            
+            // 检查 View 的 tag
+            Object tag = child.getTag();
+            if (tag != null && tag.toString().contains(String.valueOf(menuItemId))) {
+                setupLongPressListener(child);
+                return;
+            }
+            
+            // 检查 View 的 contentDescription
+            CharSequence contentDesc = child.getContentDescription();
+            if (contentDesc != null && contentDesc.toString().contains("切换项目")) {
+                setupLongPressListener(child);
+                return;
+            }
+            
+            // 递归查找子 View
+            if (child instanceof ViewGroup) {
+                findAndSetupMenuItemView((ViewGroup) child, menuItemId);
+            }
+        }
+    }
+
+    /**
+     * 为 View 设置长按监听（精确控制2秒）
+     */
+    private void setupLongPressListener(View view) {
+        final long LONG_PRESS_DURATION = 1000; // 2秒
+        final Handler handler = new Handler(Looper.getMainLooper());
+        final Runnable longPressRunnable = () -> {
+            // 长按2秒后执行
+            switchToPreviousProject();
+        };
+        
+        view.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                switch (event.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        // 延迟2秒后执行长按操作
+                        handler.postDelayed(longPressRunnable, LONG_PRESS_DURATION);
+                        // 显示提示
+                        showLongPressHint();
+                        return false; // 不消费事件，允许点击
+                        
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        // 取消长按操作
+                        handler.removeCallbacks(longPressRunnable);
+                        hideLongPressHint();
+                        return false; // 不消费事件，允许点击
+                }
+                return false;
+            }
+        });
+    }
+
+    /**
+     * 显示长按提示
+     */
+    private Toast longPressToast;
+
+    private void showLongPressHint() {
+        String previousProject = projectManager.getPreviousProject();
+        if (previousProject == null) {
+            longPressToast = Toast.makeText(this, "没有上一个项目", Toast.LENGTH_SHORT);
+        } else {
+            longPressToast = Toast.makeText(this, 
+                "长按2秒返回: " + previousProject, 
+                Toast.LENGTH_LONG);
+        }
+        longPressToast.show();
+    }
+
+    /**
+     * 隐藏长按提示
+     */
+    private void hideLongPressHint() {
+        if (longPressToast != null) {
+            longPressToast.cancel();
+        }
+    }
+
+    /**
+     * 切换到上一个项目（长按触发）
+     */
+    private void switchToPreviousProject() {
+        String previousProject = projectManager.getPreviousProject();
+        
+        // 如果变量为空，不予理睬
+        if (previousProject == null) {
+            Toast.makeText(this, "没有上一个项目", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        // 检查上一个项目是否还存在
+        List<String> projects = projectManager.getProjectList();
+        if (!projects.contains(previousProject)) {
+            Toast.makeText(this, "上一个项目 \"" + previousProject + "\" 已不存在", 
+                Toast.LENGTH_SHORT).show();
+            // 清除无效的上一个项目记录
+            projectManager.clearPreviousProject();
+            return;
+        }
+        
+        // 切换到上一个项目
+        // 注意：switchProject 内部会更新 previousProjectName
+        switchProject(previousProject);
+        
+        // 显示提示
+        Toast.makeText(this, "已返回: " + previousProject, Toast.LENGTH_SHORT).show();
     }
 
     /**

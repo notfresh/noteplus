@@ -31,6 +31,9 @@ public class ProjectContextManager {
     // 添加缓存属性
     private Map<String, NoteDbHelper> dbHelperCache = new HashMap<>();
     
+    // 上一个项目名称（用于长按返回功能）
+    private String previousProjectName = null;
+    
     public ProjectContextManager(Context context) {
         this.appContext = context.getApplicationContext();
         preferences = appContext.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
@@ -106,6 +109,12 @@ public class ProjectContextManager {
             return false;
         }
         
+        // 在切换前，将当前项目保存为"上一个项目"
+        // 只有在真正切换项目时才记录（不是首次设置，且不是切换到同一个项目）
+        if (currentProjectName != null && !currentProjectName.equals(projectName)) {
+            previousProjectName = currentProjectName;
+        }
+        
         // 不立即关闭数据库，仅切换引用
         currentProjectName = projectName;
         
@@ -119,6 +128,21 @@ public class ProjectContextManager {
         // initializeDbHelper();
         
         return true;
+    }
+    
+    /**
+     * 获取上一个项目名称
+     * @return 上一个项目名称，如果没有则返回 null
+     */
+    public String getPreviousProject() {
+        return previousProjectName;
+    }
+    
+    /**
+     * 清除上一个项目记录
+     */
+    public void clearPreviousProject() {
+        previousProjectName = null;
     }
     
     /**
@@ -230,6 +254,11 @@ public class ProjectContextManager {
             // 3. 从列表中移除
             projects.remove(projectName);
             saveProjectList(projects);
+            
+            // 3.5. 如果删除的是上一个项目，清除记录
+            if (projectName.equals(previousProjectName)) {
+                previousProjectName = null;
+            }
             
             // 4. 使用额外的安全措施删除数据库文件
             boolean success = true;
@@ -355,6 +384,11 @@ public class ProjectContextManager {
             // 3. 从项目列表中移除
             projects.remove(projectName);
             saveProjectList(projects);
+            
+            // 3.5. 如果删除的是上一个项目，清除记录
+            if (projectName.equals(previousProjectName)) {
+                previousProjectName = null;
+            }
             
             // 4. 添加到回收站列表
             addProjectToRecycleBin(projectName);
