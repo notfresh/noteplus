@@ -8,13 +8,14 @@ import android.content.ContentValues;
 
 public class NoteDbHelper extends SQLiteOpenHelper {
     private static final String DATABASE_NAME = "notes.db";
-    private static final int DATABASE_VERSION = 6;
+    private static final int DATABASE_VERSION = 7;
 
     public static final String TABLE_NOTES = "notes";
     public static final String COLUMN_ID = "_id";
     public static final String COLUMN_CONTENT = "content";
     public static final String COLUMN_TIMESTAMP = "timestamp";
     public static final String COLUMN_COST = "cost";
+    public static final String COLUMN_IS_PINNED = "is_pinned";
 
     public static final String TABLE_TAGS = "tags";
     public static final String TABLE_TIME_RANGES = "time_ranges";
@@ -202,6 +203,15 @@ public class NoteDbHelper extends SQLiteOpenHelper {
                         + TABLE_NOTE_COMMENTS + "(" + COLUMN_COMMENT_TIMESTAMP + ")");
             } catch (Exception e) {
                 // 忽略索引已存在的错误
+            }
+        }
+        
+        if (oldVersion < 7) {
+            // 添加置顶字段
+            try {
+                db.execSQL("ALTER TABLE " + TABLE_NOTES + " ADD COLUMN " + COLUMN_IS_PINNED + " INTEGER DEFAULT 0");
+            } catch (Exception e) {
+                // 如果字段已存在，忽略错误
             }
         }
     }
@@ -433,6 +443,76 @@ public class NoteDbHelper extends SQLiteOpenHelper {
         }
         
         return content;
+    }
+    
+    /**
+     * 切换笔记的置顶状态
+     * @param noteId 笔记ID
+     * @return 是否成功
+     */
+    public boolean togglePinNote(long noteId) {
+        SQLiteDatabase db = getWritableDatabase();
+        
+        // 先获取当前置顶状态
+        Cursor cursor = db.query(
+            TABLE_NOTES,
+            new String[]{COLUMN_IS_PINNED},
+            COLUMN_ID + "=?",
+            new String[]{String.valueOf(noteId)},
+            null, null, null
+        );
+        
+        int currentPinned = 0;
+        if (cursor != null && cursor.moveToFirst()) {
+            int pinnedIndex = cursor.getColumnIndex(COLUMN_IS_PINNED);
+            if (pinnedIndex != -1) {
+                currentPinned = cursor.getInt(pinnedIndex);
+            }
+            cursor.close();
+        }
+        
+        // 切换置顶状态（0 -> 1, 1 -> 0）
+        int newPinned = (currentPinned == 1) ? 0 : 1;
+        
+        ContentValues values = new ContentValues();
+        values.put(COLUMN_IS_PINNED, newPinned);
+        
+        int rowsAffected = db.update(
+            TABLE_NOTES,
+            values,
+            COLUMN_ID + "=?",
+            new String[]{String.valueOf(noteId)}
+        );
+        
+        return rowsAffected > 0;
+    }
+    
+    /**
+     * 获取笔记的置顶状态
+     * @param noteId 笔记ID
+     * @return true表示置顶，false表示未置顶
+     */
+    public boolean isNotePinned(long noteId) {
+        SQLiteDatabase db = getReadableDatabase();
+        
+        Cursor cursor = db.query(
+            TABLE_NOTES,
+            new String[]{COLUMN_IS_PINNED},
+            COLUMN_ID + "=?",
+            new String[]{String.valueOf(noteId)},
+            null, null, null
+        );
+        
+        boolean pinned = false;
+        if (cursor != null && cursor.moveToFirst()) {
+            int pinnedIndex = cursor.getColumnIndex(COLUMN_IS_PINNED);
+            if (pinnedIndex != -1) {
+                pinned = cursor.getInt(pinnedIndex) == 1;
+            }
+            cursor.close();
+        }
+        
+        return pinned;
     }
 
 

@@ -582,14 +582,15 @@ public class MainActivity extends AppCompatActivity {
      */
     private void loadMoments() {
         SQLiteDatabase db = dbHelper.getReadableDatabase();
-        // 根据设置决定排序方式
-        String orderBy = timeDescOrder ? 
+        // 根据设置决定排序方式，置顶的记录排在最前面
+        String orderBy = NoteDbHelper.COLUMN_IS_PINNED + " DESC, " + 
+                (timeDescOrder ? 
                 NoteDbHelper.COLUMN_TIMESTAMP + " DESC" : 
-                NoteDbHelper.COLUMN_TIMESTAMP + " ASC";
+                NoteDbHelper.COLUMN_TIMESTAMP + " ASC");
         
         Cursor cursor = db.query(
                 NoteDbHelper.TABLE_NOTES,
-                new String[]{"_id", NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP, NoteDbHelper.COLUMN_COST},
+                new String[]{"_id", NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP, NoteDbHelper.COLUMN_COST, NoteDbHelper.COLUMN_IS_PINNED},
                 null, null, null, null,
                 orderBy
         );
@@ -623,11 +624,27 @@ public class MainActivity extends AppCompatActivity {
                 // 获取笔记内容
                 String content = cursor.getString(cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_CONTENT));
                 
+                // 获取置顶状态
+                int pinnedIndex = cursor.getColumnIndex(NoteDbHelper.COLUMN_IS_PINNED);
+                boolean isPinned = pinnedIndex >= 0 && cursor.getInt(pinnedIndex) == 1;
+                
                 // 为列表项添加时间区间和标签信息
                 updateListItemWithExtras(view, noteId, cost);
                 
-                // 判断是否显示折叠按钮
-                checkAndShowFoldButton(view, noteId, content);
+                // 如果置顶，在内容前添加标识（在updateListItemWithExtras之后，确保内容已设置）
+                if (isPinned) {
+                    TextView contentText = view.findViewById(R.id.contentText);
+                    if (contentText != null) {
+                        String currentText = contentText.getText().toString();
+                        // 检查是否已经包含置顶标识，避免重复添加
+                        if (!currentText.startsWith("📌 ")) {
+                            contentText.setText("📌 " + currentText);
+                        }
+                    }
+                }
+                
+                // 判断是否显示折叠按钮（传入置顶状态）
+                checkAndShowFoldButton(view, noteId, content, isPinned);
                 
                 // 处理多选模式下的复选框
                 CheckBox checkBox = view.findViewById(R.id.checkBox);
@@ -745,8 +762,9 @@ public class MainActivity extends AppCompatActivity {
      * @param view 列表项视图
      * @param noteId 笔记ID
      * @param content 笔记内容
+     * @param isPinned 是否置顶
      */
-    private void checkAndShowFoldButton(View view, long noteId, String content) {
+    private void checkAndShowFoldButton(View view, long noteId, String content, boolean isPinned) {
         // 读取当前项目的折叠字数配置
         String foldLengthStr = dbHelper.getSetting(NoteDbHelper.KEY_FOLD_DISPLAY_LENGTH, "300");
         int foldDisplayLength;
@@ -778,15 +796,25 @@ public class MainActivity extends AppCompatActivity {
                     buttonText = "折叠记录";
                 }
                 
-                // 设置内容文本（需要保留可能已添加的花费信息）
+                // 设置内容文本（需要保留可能已添加的花费信息和置顶标识）
                 String currentText = contentText.getText().toString();
                 String finalText = displayText;
+                
+                // 检查是否有置顶标识
+                boolean hasPinPrefix = currentText.startsWith("📌 ");
+                if (hasPinPrefix || isPinned) {
+                    // 如果当前文本已有置顶标识，或者笔记是置顶的，确保标识在最前面
+                    if (!finalText.startsWith("📌 ")) {
+                        finalText = "📌 " + finalText;
+                    }
+                }
+                
                 // 检查是否有花费信息（格式：[¥xx.xx]）
                 if (currentText.contains(" [¥")) {
                     int costIndex = currentText.lastIndexOf(" [¥");
                     if (costIndex > 0) {
                         String costPart = currentText.substring(costIndex);
-                        finalText = displayText + costPart;
+                        finalText = finalText + costPart;
                     }
                 }
                 contentText.setText(finalText);
@@ -865,6 +893,9 @@ public class MainActivity extends AppCompatActivity {
      * @param targetPosition 目标记录的position（如果已知，用于滚动定位）
      */
     private void updateSingleNoteView(long noteId, String content, int targetPosition) {
+        // 获取置顶状态
+        boolean isPinned = dbHelper.isNotePinned(noteId);
+        
         // 保存当前滚动位置（作为备用）
         int firstVisiblePosition = momentsListView.getFirstVisiblePosition();
         View firstVisibleView = momentsListView.getChildAt(0);
@@ -883,7 +914,7 @@ public class MainActivity extends AppCompatActivity {
                 if (tag != null && tag.equals(noteId)) {
                     // 找到对应的View，直接更新
                     // 重新调用checkAndShowFoldButton来更新内容和按钮
-                    checkAndShowFoldButton(childView, noteId, content);
+                    checkAndShowFoldButton(childView, noteId, content, isPinned);
                     found = true;
                     break;
                 }
@@ -1081,7 +1112,7 @@ public class MainActivity extends AppCompatActivity {
         float density = getResources().getDisplayMetrics().density;
         return Math.round(dp * density);
     }
-    
+
     /**
      * 格式化评论时间戳（新格式：25/11/30 15:20）
      */
@@ -2452,7 +2483,9 @@ public class MainActivity extends AppCompatActivity {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("选择操作");
         
-        String[] options = {"复制到剪切板", "追加内容", "删除"};
+        // 检查当前置顶状态
+        boolean isPinned = dbHelper.isNotePinned(noteId);
+        String[] options = {"复制到剪切板", "追加内容", isPinned ? "取消置顶" : "置顶", "删除"};
         
         builder.setItems(options, (dialog, which) -> {
             switch (which) {
@@ -2462,7 +2495,10 @@ public class MainActivity extends AppCompatActivity {
                 case 1: // 添加追加（新增）
                     showAddCommentDialog(noteId, null);
                     break;
-                case 2: // 删除
+                case 2: // 置顶/取消置顶
+                    togglePinNote(noteId);
+                    break;
+                case 3: // 删除
                     showDeleteConfirmDialog(noteId);
                     break;
             }
@@ -2478,6 +2514,22 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * 切换笔记的置顶状态
+     * @param noteId 笔记ID
+     */
+    private void togglePinNote(long noteId) {
+        boolean success = dbHelper.togglePinNote(noteId);
+        if (success) {
+            boolean isPinned = dbHelper.isNotePinned(noteId);
+            Toast.makeText(this, isPinned ? "已置顶" : "已取消置顶", Toast.LENGTH_SHORT).show();
+            // 刷新列表以更新排序
+            loadMoments();
+        } else {
+            Toast.makeText(this, "操作失败", Toast.LENGTH_SHORT).show();
+        }
+    }
+    
     /**
      * 复制笔记内容到剪切板
      * @param noteId 笔记ID
@@ -2973,17 +3025,17 @@ public class MainActivity extends AppCompatActivity {
                 
                 final int finalImportedCount = result.importedCount;
                 final int finalSkippedCount = result.skippedCount;
-                
-                runOnUiThread(() -> {
-                    progressDialog.dismiss();
-                    String currentProject = projectManager.getCurrentProject();
-                    String message = String.format("导入完成！成功导入 %d 条记录到项目 \"%s\"", finalImportedCount, currentProject);
-                    if (finalSkippedCount > 0) {
-                        message += String.format("，跳过 %d 条记录", finalSkippedCount);
-                    }
-                    Toast.makeText(this, message, Toast.LENGTH_LONG).show();
-                    loadMoments(); // 刷新列表
-                });
+                    
+                    runOnUiThread(() -> {
+                        progressDialog.dismiss();
+                        String currentProject = projectManager.getCurrentProject();
+                        String message = String.format("导入完成！成功导入 %d 条记录到项目 \"%s\"", finalImportedCount, currentProject);
+                        if (finalSkippedCount > 0) {
+                            message += String.format("，跳过 %d 条记录", finalSkippedCount);
+                        }
+                        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+                        loadMoments(); // 刷新列表
+                    });
                 
             } catch (Exception e) {
                 e.printStackTrace();
@@ -3010,17 +3062,17 @@ public class MainActivity extends AppCompatActivity {
                 
                 final int finalImportedCount = result.importedCount;
                 final int finalSkippedCount = result.skippedCount;
-                
-                runOnUiThread(() -> {
-                    progressDialog.dismiss();
-                    String currentProject = projectManager.getCurrentProject();
-                    String message = String.format("导入完成！成功导入 %d 条记录到项目 \"%s\"", finalImportedCount, currentProject);
-                    if (finalSkippedCount > 0) {
-                        message += String.format("，跳过 %d 条记录", finalSkippedCount);
-                    }
-                    Toast.makeText(this, message, Toast.LENGTH_LONG).show();
-                    loadMoments(); // 刷新列表
-                });
+                    
+                    runOnUiThread(() -> {
+                        progressDialog.dismiss();
+                        String currentProject = projectManager.getCurrentProject();
+                        String message = String.format("导入完成！成功导入 %d 条记录到项目 \"%s\"", finalImportedCount, currentProject);
+                        if (finalSkippedCount > 0) {
+                            message += String.format("，跳过 %d 条记录", finalSkippedCount);
+                        }
+                        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+                        loadMoments(); // 刷新列表
+                    });
                 
             } catch (Exception e) {
                 e.printStackTrace();
