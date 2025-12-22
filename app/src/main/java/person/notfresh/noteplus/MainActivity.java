@@ -54,6 +54,7 @@ import android.widget.SimpleCursorAdapter;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.widget.CheckBox;
+import android.widget.SeekBar;
 import android.widget.Switch;
 
 import android.Manifest;
@@ -232,6 +233,20 @@ public class MainActivity extends AppCompatActivity {
         // 添加输入模式切换功能（三档切换：普通 -> 展开 -> 全屏 -> 普通）
         ImageButton expandButton = findViewById(R.id.expandButton);
         expandButton.setOnClickListener(v -> toggleInputMode());
+        
+        // 初始化语音输入按钮
+        ImageButton voiceInputButton = findViewById(R.id.voiceInputButton);
+        voiceInputButton.setOnClickListener(v -> {
+            Toast.makeText(this, "语音输入功能（待实现）", Toast.LENGTH_SHORT).show();
+            // TODO: 实现语音输入功能
+        });
+        
+        // 初始化图片输入按钮
+        ImageButton imageInputButton = findViewById(R.id.imageInputButton);
+        imageInputButton.setOnClickListener(v -> {
+            Toast.makeText(this, "添加图片功能（待实现）", Toast.LENGTH_SHORT).show();
+            // TODO: 实现图片选择/拍摄功能
+        });
 
         // 初始化通知助手
         notificationHelper = new NotificationHelper(this);
@@ -675,6 +690,9 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
                 
+                // 初始化音频播放控件（测试用，默认显示）
+                //initAudioControls(view, noteId);
+                
                 return view;
             }
         };
@@ -763,6 +781,77 @@ public class MainActivity extends AppCompatActivity {
             String costText = String.format(" [¥%.2f]", cost);
             contentText.setText(currentText + costText);
         }
+    }
+    
+    /**
+     * 初始化音频播放控件（测试用）
+     * @param view 列表项视图
+     * @param noteId 笔记ID
+     */
+    private void initAudioControls(View view, long noteId) {
+        LinearLayout audioContainer = view.findViewById(R.id.audioContainer);
+        if (audioContainer == null) {
+            return;
+        }
+        
+        ImageButton playPauseButton = view.findViewById(R.id.audioPlayPauseButton);
+        SeekBar audioSeekBar = view.findViewById(R.id.audioSeekBar);
+        TextView currentTimeText = view.findViewById(R.id.audioCurrentTimeText);
+        TextView totalTimeText = view.findViewById(R.id.audioTotalTimeText);
+        
+        if (playPauseButton == null || audioSeekBar == null || 
+            currentTimeText == null || totalTimeText == null) {
+            return;
+        }
+        
+        // 设置测试数据：总时长 02:30，当前进度 50%
+        totalTimeText.setText("02:30");
+        currentTimeText.setText("01:15");
+        audioSeekBar.setMax(150); // 150秒 = 2分30秒
+        audioSeekBar.setProgress(75); // 75秒 = 1分15秒
+        
+        // 播放/暂停按钮状态（默认暂停状态）
+        boolean[] isPlaying = {false};
+        
+        // 设置播放/暂停按钮点击事件
+        playPauseButton.setOnClickListener(v -> {
+            isPlaying[0] = !isPlaying[0];
+            if (isPlaying[0]) {
+                // 切换到暂停图标
+                playPauseButton.setImageResource(R.drawable.ic_audio_pause);
+                Toast.makeText(this, "播放音频 (笔记ID: " + noteId + ")", Toast.LENGTH_SHORT).show();
+            } else {
+                // 切换到播放图标
+                playPauseButton.setImageResource(R.drawable.ic_audio_play);
+                Toast.makeText(this, "暂停播放", Toast.LENGTH_SHORT).show();
+            }
+        });
+        
+        // 设置进度条拖动事件
+        audioSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (fromUser) {
+                    // 用户拖动时更新当前时间显示
+                    int minutes = progress / 60;
+                    int seconds = progress % 60;
+                    currentTimeText.setText(String.format("%02d:%02d", minutes, seconds));
+                }
+            }
+            
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+                // 开始拖动时的处理
+            }
+            
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+                int progress = seekBar.getProgress();
+                Toast.makeText(MainActivity.this, 
+                    "跳转到: " + String.format("%02d:%02d", progress / 60, progress % 60), 
+                    Toast.LENGTH_SHORT).show();
+            }
+        });
     }
     
     /**

@@ -37,6 +37,34 @@
 				android:padding="12dp" />
 		</LinearLayout>
 
+		<!-- 麦克风按钮（语音输入） -->
+		<ImageButton
+			android:id="@+id/voiceInputButton"
+			android:layout_width="32dp"
+			android:layout_height="32dp"
+			android:layout_gravity="top"
+			android:layout_marginStart="4dp"
+			android:layout_marginTop="8dp"
+			android:background="?attr/selectableItemBackgroundBorderless"
+			android:contentDescription="语音输入"
+			android:src="@drawable/ic_mic"
+			android:alpha="0.6"
+			android:tint="#757575" />
+
+		<!-- 图片按钮（图片记录） -->
+		<ImageButton
+			android:id="@+id/imageInputButton"
+			android:layout_width="32dp"
+			android:layout_height="32dp"
+			android:layout_gravity="top"
+			android:layout_marginStart="4dp"
+			android:layout_marginTop="8dp"
+			android:background="?attr/selectableItemBackgroundBorderless"
+			android:contentDescription="添加图片"
+			android:src="@drawable/ic_image"
+			android:alpha="0.6"
+			android:tint="#757575" />
+
 		<ImageButton
 			android:id="@+id/expandButton"
 			android:layout_width="32dp"

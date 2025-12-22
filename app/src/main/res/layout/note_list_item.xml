@@ -32,6 +32,64 @@
             android:layout_marginTop="4dp"
             android:textSize="16sp" />
 
+        <!-- 音频播放控件容器，默认隐藏 -->
+        <LinearLayout
+            android:id="@+id/audioContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal"
+            android:visibility="gone"
+            android:gravity="center_vertical"
+            android:padding="8dp"
+            android:background="#F5F5F5">
+
+            <!-- 播放/暂停按钮 -->
+            <ImageButton
+                android:id="@+id/audioPlayPauseButton"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_marginEnd="8dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="播放/暂停"
+                android:src="@drawable/ic_audio_play"
+                android:scaleType="fitCenter" />
+
+            <!-- 当前播放时间 -->
+            <TextView
+                android:id="@+id/audioCurrentTimeText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="00:00"
+                android:textSize="12sp"
+                android:textColor="@android:color/darker_gray"
+                android:minWidth="40dp"
+                android:gravity="center" />
+
+            <!-- 音频进度条 -->
+            <SeekBar
+                android:id="@+id/audioSeekBar"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"
+                android:max="100"
+                android:progress="0" />
+
+            <!-- 总时长 -->
+            <TextView
+                android:id="@+id/audioTotalTimeText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="00:00"
+                android:textSize="12sp"
+                android:textColor="@android:color/darker_gray"
+                android:minWidth="40dp"
+                android:gravity="center" />
+
+        </LinearLayout>
+
     </LinearLayout>
 
 </LinearLayout> 

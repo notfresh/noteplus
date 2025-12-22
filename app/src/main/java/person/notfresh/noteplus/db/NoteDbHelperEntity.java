@@ -6,7 +6,7 @@ import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.content.ContentValues;
 
-public class NoteDbHelper extends SQLiteOpenHelper {
+public class NoteDbHelperEntity extends SQLiteOpenHelper {
     private static final String DATABASE_NAME = "notes.db";
     private static final int DATABASE_VERSION = 7;
 
@@ -57,11 +57,11 @@ public class NoteDbHelper extends SQLiteOpenHelper {
             + COLUMN_TIMESTAMP + " integer not null, "
             + COLUMN_COST + " real default 0);";
 
-    public NoteDbHelper(Context context, String databaseName) {
+    public NoteDbHelperEntity(Context context, String databaseName) {
         super(context, databaseName, null, DATABASE_VERSION);
     }
 
-    public NoteDbHelper(Context context) {
+    public NoteDbHelperEntity(Context context) {
         this(context, DATABASE_NAME);
     }
 
