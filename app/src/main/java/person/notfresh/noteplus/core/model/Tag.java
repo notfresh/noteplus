@@ -1,4 +1,4 @@
-package person.notfresh.noteplus.model;
+package person.notfresh.noteplus.core.model;
 
 public class Tag {
     private long id;
@@ -42,4 +42,4 @@ public class Tag {
     public String toString() {
         return name;
     }
-} 
+}

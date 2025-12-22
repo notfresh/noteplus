@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="12dp"
+    android:background="?android:attr/selectableItemBackground"
+    android:clickable="true"
+    android:focusable="true">
+
+    <!-- 顶部信息栏：项目名称和类型 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="4dp">
+
+        <TextView
+            android:id="@+id/timelineProjectName"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="项目名称"
+            android:textSize="12sp"
+            android:textColor="#757575"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/timelineItemType"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Note"
+            android:textSize="11sp"
+            android:textColor="#FFFFFF"
+            android:background="#2196F3"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp"
+            android:layout_marginStart="8dp" />
+    </LinearLayout>
+
+    <!-- 时间显示 -->
+    <TextView
+        android:id="@+id/timelineTime"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="2024-01-01 12:00:00"
+        android:textSize="11sp"
+        android:textColor="#9E9E9E"
+        android:layout_marginBottom="8dp" />
+
+    <!-- 内容预览 -->
+    <TextView
+        android:id="@+id/timelineContent"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="内容预览..."
+        android:textSize="14sp"
+        android:textColor="#212121"
+        android:maxLines="3"
+        android:ellipsize="end"
+        android:lineSpacingExtra="2dp" />
+
+    <!-- 标签显示（如果有） -->
+    <LinearLayout
+        android:id="@+id/timelineTagsContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="8dp"
+        android:visibility="gone">
+
+        <!-- 标签将通过代码动态添加 -->
+    </LinearLayout>
+
+</LinearLayout>

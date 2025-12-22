@@ -1,4 +1,4 @@
-package person.notfresh.noteplus.model;
+package person.notfresh.noteplus.core.model;
 
 public class TimeRange {
     private long id;
@@ -46,4 +46,4 @@ public class TimeRange {
     public void setEndTime(long endTime) {
         this.endTime = endTime;
     }
-} 
+}

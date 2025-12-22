@@ -4,6 +4,12 @@
     
     <!-- 工具栏上显示的菜单项 -->
     <item
+        android:id="@+id/action_timeline"
+        android:title="Timeline"
+        android:icon="@drawable/ic_timeline"
+        app:showAsAction="always" />
+
+    <item
         android:id="@+id/action_switch_project"
         android:title="切换项目"
         android:icon="@drawable/ic_projects"

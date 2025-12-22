@@ -84,7 +84,10 @@ import org.json.JSONObject;
 
 import person.notfresh.noteplus.db.NoteDbHelper;
 import person.notfresh.noteplus.db.ProjectContextManager;
-import person.notfresh.noteplus.model.Tag;
+import person.notfresh.noteplus.core.model.Tag;
+import person.notfresh.noteplus.core.GlobalTimeline;
+import person.notfresh.noteplus.core.TimeRangeFilter;
+import person.notfresh.noteplus.core.model.Comment;
 
 import person.notfresh.noteplus.util.NotificationHelper;
 import person.notfresh.noteplus.util.ReminderScheduler;
@@ -113,7 +116,9 @@ public class MainActivity extends AppCompatActivity {
 
     private EditText momentEditText;
     private Button saveButton;
+    
     private ListView momentsListView;
+    private SimpleCursorAdapter noteListAdapter;
 
     private Button addTagButton;
     private ChipGroup tagChipGroup;
@@ -125,7 +130,7 @@ public class MainActivity extends AppCompatActivity {
     // 添加dialog作为成员变量
     private AlertDialog tagSelectionDialog;
 
-    private SimpleCursorAdapter noteListAdapter;
+    
 
     // 新增视图引用
     private TextView startTimeText;
@@ -1590,6 +1595,9 @@ public class MainActivity extends AppCompatActivity {
         } else if (id == R.id.action_cancel_multi_select) {
             exitMultiSelectMode();
             return true;
+        } else if (id == R.id.action_timeline) {
+            showTimelineDialog();
+            return true;
         }
         return super.onOptionsItemSelected(item);
     }
@@ -2886,6 +2894,221 @@ public class MainActivity extends AppCompatActivity {
         builder.setNegativeButton("取消", null);
         
         builder.show();
+    }
+
+    /**
+     * 显示 Timeline 对话框
+     * 用于查看跨项目的 Note 和 Comment 展平，按时间排序的展示
+     */
+    private void showTimelineDialog() {
+        // 创建自定义对话框
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        View dialogView = getLayoutInflater().inflate(R.layout.dialog_timeline, null);
+        builder.setView(dialogView);
+
+        // 获取对话框中的视图组件
+        ListView timelineListView = dialogView.findViewById(R.id.timelineListView);
+        TextView itemCountText = dialogView.findViewById(R.id.timelineItemCount);
+        Button closeButton = dialogView.findViewById(R.id.btnCloseTimeline);
+
+        // 创建对话框
+        AlertDialog dialog = builder.create();
+        
+        // 设置关闭按钮点击事件
+        closeButton.setOnClickListener(v -> dialog.dismiss());
+
+        // 加载时间线数据（在后台线程中执行）
+        ProgressDialog progressDialog = new ProgressDialog(this);
+        progressDialog.setMessage("正在加载时间线...");
+        progressDialog.setCancelable(false);
+        progressDialog.show();
+        
+        new Thread(() -> {
+            try {
+                // 创建 GlobalTimeline 实例
+                GlobalTimeline globalTimeline = new GlobalTimeline(projectManager);
+                
+                // 加载最近一周的数据，按时间逆序（最新的在前）
+                List<Comment> timelineItems = globalTimeline.loadGlobalTimelineLastWeek(true);
+                
+                // 返回UI线程更新界面
+                runOnUiThread(() -> {
+                    progressDialog.dismiss();
+                    
+                    // 更新项目数量
+                    itemCountText.setText(timelineItems.size() + " 项");
+                    
+                    // 创建适配器
+                    TimelineAdapter adapter = new TimelineAdapter(timelineItems);
+                    timelineListView.setAdapter(adapter);
+                    
+                    // 设置点击事件
+                    timelineListView.setOnItemClickListener((parent, view, position, id) -> {
+                        Comment item = timelineItems.get(position);
+                        // TODO: 可以在这里添加点击跳转到对应 Note 详情的逻辑
+                        // 需要切换到对应项目并打开对应的 Note
+                    });
+                });
+            } catch (Exception e) {
+                e.printStackTrace();
+                runOnUiThread(() -> {
+                    progressDialog.dismiss();
+                    Toast.makeText(this, "加载时间线失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
+            }
+        }).start();
+        
+        // 显示对话框
+        dialog.show();
+        
+        // 设置对话框窗口大小
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setLayout(
+                (int) (getResources().getDisplayMetrics().widthPixels * 0.9),
+                (int) (getResources().getDisplayMetrics().heightPixels * 0.8)
+            );
+        }
+    }
+    
+    /**
+     * Timeline 列表适配器
+     */
+    private class TimelineAdapter extends android.widget.BaseAdapter {
+        private final List<Comment> items;
+        
+        public TimelineAdapter(List<Comment> items) {
+            this.items = items;
+        }
+        
+        @Override
+        public int getCount() {
+            return items.size();
+        }
+        
+        @Override
+        public Object getItem(int position) {
+            return items.get(position);
+        }
+        
+        @Override
+        public long getItemId(int position) {
+            return position;
+        }
+        
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            View view = convertView;
+            if (view == null) {
+                view = getLayoutInflater().inflate(R.layout.item_timeline, parent, false);
+            }
+            
+            Comment comment = items.get(position);
+            
+            // 获取视图组件
+            TextView projectNameText = view.findViewById(R.id.timelineProjectName);
+            TextView itemTypeText = view.findViewById(R.id.timelineItemType);
+            TextView timeText = view.findViewById(R.id.timelineTime);
+            TextView contentText = view.findViewById(R.id.timelineContent);
+            LinearLayout tagsContainer = view.findViewById(R.id.timelineTagsContainer);
+            
+            // 设置项目名称
+            String projectName = comment.getProjectName();
+            if (projectName == null || projectName.isEmpty()) {
+                projectName = "默认项目";
+            }
+            projectNameText.setText(projectName);
+            
+            // 判断是 Note 还是 Comment
+            // 使用 itemType 字段来判断，而不是 parentCommentId
+            // 因为第一条 Comment 的 parentCommentId 也可能是 null
+            boolean isNote = comment.getItemType() == person.notfresh.noteplus.core.model.TimelineItemType.NOTE;
+            
+            // 设置类型标签
+            if (isNote) {
+                itemTypeText.setText("Note");
+                itemTypeText.setBackgroundColor(Color.parseColor("#2196F3")); // 蓝色
+            } else {
+                itemTypeText.setText("Comment");
+                itemTypeText.setBackgroundColor(Color.parseColor("#4CAF50")); // 绿色
+            }
+            
+            // 设置时间
+            timeText.setText(formatTimestamp(comment.getTimestamp()));
+            
+            // 设置内容预览（最多200字符）
+            String content = comment.getContent();
+            if (content == null) {
+                content = "";
+            }
+            if (content.length() > 200) {
+                content = content.substring(0, 200) + "...";
+            }
+            contentText.setText(content);
+            
+            // 加载标签（只有 Note 才显示标签）
+            tagsContainer.removeAllViews();
+            if (isNote) {
+                long noteId = comment.getNoteId();
+                // 需要获取对应项目的 dbHelper
+                String project = comment.getProjectName();
+                if (project != null && !project.isEmpty()) {
+                    Cursor tagsCursor = null;
+                    try {
+                        NoteDbHelper dbHelper = projectManager.getDbHelperForProject(project);
+                        if (dbHelper != null) {
+                            tagsCursor = dbHelper.getTagsForNote(noteId);
+                            if (tagsCursor != null && tagsCursor.getCount() > 0) {
+                                tagsContainer.setVisibility(View.VISIBLE);
+                                while (tagsCursor.moveToNext()) {
+                                    @SuppressLint("Range") String tagName = tagsCursor.getString(
+                                        tagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_NAME));
+                                    @SuppressLint("Range") String tagColor = tagsCursor.getString(
+                                        tagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_COLOR));
+                                    
+                                    // 创建标签 TextView
+                                    TextView tagView = new TextView(MainActivity.this);
+                                    tagView.setText(tagName);
+                                    tagView.setPadding(dpToPx(6), dpToPx(2), dpToPx(6), dpToPx(2));
+                                    tagView.setTextColor(Color.WHITE);
+                                    tagView.setTextSize(11);
+                                    
+                                    try {
+                                        tagView.setBackgroundColor(Color.parseColor(tagColor));
+                                    } catch (Exception e) {
+                                        tagView.setBackgroundColor(Color.GRAY);
+                                    }
+                                    
+                                    LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                                    params.setMargins(0, 0, dpToPx(4), 0);
+                                    tagView.setLayoutParams(params);
+                                    
+                                    tagsContainer.addView(tagView);
+                                }
+                            } else {
+                                tagsContainer.setVisibility(View.GONE);
+                            }
+                        } else {
+                            tagsContainer.setVisibility(View.GONE);
+                        }
+                    } catch (Exception e) {
+                        tagsContainer.setVisibility(View.GONE);
+                        e.printStackTrace();
+                    } finally {
+                        if (tagsCursor != null) {
+                            tagsCursor.close();
+                        }
+                    }
+                } else {
+                    tagsContainer.setVisibility(View.GONE);
+                }
+            } else {
+                tagsContainer.setVisibility(View.GONE);
+            }
+            
+            return view;
+        }
     }
 
     /**
