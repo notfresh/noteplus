@@ -93,6 +93,8 @@ import person.notfresh.noteplus.core.model.Comment;
 import person.notfresh.noteplus.util.NotificationHelper;
 import person.notfresh.noteplus.util.ReminderScheduler;
 import person.notfresh.noteplus.util.StringUtil;
+import person.notfresh.noteplus.util.NoteCursorWrapper;
+import person.notfresh.noteplus.core.model.Note;
 
 
 public class MainActivity extends AppCompatActivity {
@@ -119,7 +121,8 @@ public class MainActivity extends AppCompatActivity {
     private Button saveButton;
     
     private ListView momentsListView;
-    private SimpleCursorAdapter noteListAdapter;
+    private android.widget.BaseAdapter noteListAdapter; // 改为 BaseAdapter，支持新的 NoteListAdapter
+    private NoteCursorWrapper noteCursorWrapper; // 新增：Cursor 包装器
 
     private Button addTagButton;
     private ChipGroup tagChipGroup;
@@ -279,6 +282,11 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        // 关闭 Cursor 包装器
+        if (noteCursorWrapper != null) {
+            noteCursorWrapper.close();
+            noteCursorWrapper = null;
+        }
         if (dbHelper != null) {
             dbHelper.close();
         }
@@ -573,7 +581,10 @@ public class MainActivity extends AppCompatActivity {
             // 清空表单
             clearForm();
             
-            // 重新加载列表
+            // 清空缓存并重新加载列表
+            if (noteCursorWrapper != null) {
+                noteCursorWrapper.clearCache();
+            }
             loadMoments();
             
             Toast.makeText(this, "保存成功", Toast.LENGTH_SHORT).show();
@@ -602,8 +613,15 @@ public class MainActivity extends AppCompatActivity {
 
     /**
      * 加载已有记录，并添加长按删除功能
+     * 使用 Cursor 包装器 + 懒加载模式
      */
     private void loadMoments() {
+        // 先关闭之前的 Cursor 包装器（如果存在）
+        if (noteCursorWrapper != null) {
+            noteCursorWrapper.close();
+            noteCursorWrapper = null;
+        }
+        
         SQLiteDatabase db = dbHelper.getReadableDatabase();
         // 根据设置决定排序方式，置顶的记录排在最前面
         String orderBy = NoteDbHelper.COLUMN_IS_PINNED + " DESC, " + 
@@ -618,109 +636,29 @@ public class MainActivity extends AppCompatActivity {
                 orderBy
         );
 
-        // 使用应用中实际存在的资源ID
-        String[] from = new String[]{NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP};
-        int[] to = new int[]{R.id.contentText, R.id.timestampText};
-
-        noteListAdapter = new SimpleCursorAdapter(
-                this,
-                R.layout.note_list_item,
-                cursor,
-                from,
-                to,
-                0
-        ) {
-            @Override
-            public View getView(int position, View convertView, ViewGroup parent) {
-                View view = super.getView(position, convertView, parent);
-                
-                // 获取当前记录ID
-                Cursor cursor = (Cursor) getItem(position);
-                long noteId = cursor.getLong(cursor.getColumnIndexOrThrow("_id"));
-                
-                // 设置tag，用于后续定位View
-                view.setTag(noteId);
-                
-                // 获取花费金额
-                double cost = cursor.getDouble(cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COST));
-                
-                // 获取笔记内容
-                String content = cursor.getString(cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_CONTENT));
-                
-                // 获取置顶状态
-                int pinnedIndex = cursor.getColumnIndex(NoteDbHelper.COLUMN_IS_PINNED);
-                boolean isPinned = pinnedIndex >= 0 && cursor.getInt(pinnedIndex) == 1;
-                
-                // 为列表项添加时间区间和标签信息
-                updateListItemWithExtras(view, noteId, cost);
-                
-                // 如果置顶，在内容前添加标识（在updateListItemWithExtras之后，确保内容已设置）
-                if (isPinned) {
-                    TextView contentText = view.findViewById(R.id.contentText);
-                    if (contentText != null) {
-                        String currentText = contentText.getText().toString();
-                        // 检查是否已经包含置顶标识，避免重复添加
-                        if (!currentText.startsWith("📌 ")) {
-                            contentText.setText("📌 " + currentText);
-                        }
-                    }
-                }
-                
-                // 判断是否显示折叠按钮（传入置顶状态）
-                checkAndShowFoldButton(view, noteId, content, isPinned);
-                
-                // 处理多选模式下的复选框
-                CheckBox checkBox = view.findViewById(R.id.checkBox);
-                if (checkBox != null) {
-                    if (isMultiSelectMode) {
-                        checkBox.setVisibility(View.VISIBLE);
-                        checkBox.setChecked(selectedNoteIds.contains(noteId));
-                        
-                        // 设置复选框点击事件
-                        checkBox.setOnClickListener(v -> {
-                            if (checkBox.isChecked()) {
-                                selectedNoteIds.add(noteId);
-                            } else {
-                                selectedNoteIds.remove(noteId);
-                            }
-                            updateMultiSelectMenu();
-                        });
-                    } else {
-                        checkBox.setVisibility(View.GONE);
-                    }
-                }
-                
-                // 初始化音频播放控件（测试用，默认显示）
-                //initAudioControls(view, noteId);
-                
-                return view;
-            }
-        };
-
-        // 设置时间戳格式
-        noteListAdapter.setViewBinder((view, cursor1, columnIndex) -> {
-            if (columnIndex == cursor1.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TIMESTAMP)) {
-                long timestamp = cursor1.getLong(columnIndex);
-                String formattedDate = formatTimestamp(timestamp);
-                ((TextView) view).setText(formattedDate);
-                return true;
-            }
-            return false;
-        });
-
+        // 创建 Cursor 包装器
+        String currentProject = projectManager.getCurrentProject();
+        noteCursorWrapper = new NoteCursorWrapper(cursor, currentProject);
+        
+        // 创建适配器
+        noteListAdapter = new NoteListAdapter(noteCursorWrapper);
+        
+        // 设置适配器
         momentsListView.setAdapter(noteListAdapter);
         
         // 添加点击监听器
         momentsListView.setOnItemClickListener((parent, view, position, id) -> {
             if (isMultiSelectMode) {
                 // 多选模式下，点击切换选择状态
+                Note note = (Note) noteListAdapter.getItem(position);
+                long noteId = note.getId();
                 CheckBox checkBox = view.findViewById(R.id.checkBox);
                 if (checkBox != null) {
                     checkBox.setChecked(!checkBox.isChecked());
                     if (checkBox.isChecked()) {
-                        selectedNoteIds.add(id);
+                        selectedNoteIds.add(noteId);
                     } else {
-                        selectedNoteIds.remove(id);
+                        selectedNoteIds.remove(noteId);
                     }
                     updateMultiSelectMenu();
                 }
@@ -733,7 +671,9 @@ public class MainActivity extends AppCompatActivity {
                 // 多选模式下，长按不执行操作
                 return false;
             } else {
-                showNoteOptionsMenu(view, id);
+                Note note = (Note) noteListAdapter.getItem(position);
+                long noteId = note.getId();
+                showNoteOptionsMenu(view, noteId);
                 return true; // 返回true表示消费了长按事件
             }
         });
@@ -1282,7 +1222,6 @@ public class MainActivity extends AppCompatActivity {
             }
             displayComments(commentsContainer, noteId, maxDisplay);
         }
-        
         extraContainer.addView(commentsContainer);
     }
     
@@ -1574,9 +1513,9 @@ public class MainActivity extends AppCompatActivity {
         // 找到该笔记在列表中的位置
         if (noteListAdapter != null) {
             for (int i = 0; i < noteListAdapter.getCount(); i++) {
-                Cursor cursor = (Cursor) noteListAdapter.getItem(i);
-                if (cursor != null) {
-                    long id = cursor.getLong(cursor.getColumnIndexOrThrow("_id"));
+                Note note = (Note) noteListAdapter.getItem(i);
+                if (note != null) {
+                    long id = note.getId();
                     if (id == noteId) {
                         // 找到对应的视图
                         int firstVisible = momentsListView.getFirstVisiblePosition();
@@ -1585,7 +1524,7 @@ public class MainActivity extends AppCompatActivity {
                         if (i >= firstVisible && i <= lastVisible) {
                             View view = momentsListView.getChildAt(i - firstVisible);
                             if (view != null) {
-                                double cost = cursor.getDouble(cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COST));
+                                double cost = note.getCost();
                                 updateListItemWithExtras(view, noteId, cost);
                             }
                         }
@@ -3060,6 +2999,100 @@ public class MainActivity extends AppCompatActivity {
                 (int) (getResources().getDisplayMetrics().widthPixels * 0.9),
                 (int) (getResources().getDisplayMetrics().heightPixels * 0.8)
             );
+        }
+    }
+    
+    /**
+     * Note 列表适配器（使用 Cursor 包装器 + 懒加载）
+     */
+    private class NoteListAdapter extends android.widget.BaseAdapter {
+        private final NoteCursorWrapper wrapper;
+        
+        public NoteListAdapter(NoteCursorWrapper wrapper) {
+            this.wrapper = wrapper;
+        }
+        
+        @Override
+        public int getCount() {
+            return wrapper.getCount();
+        }
+        
+        @Override
+        public Note getItem(int position) {
+            return wrapper.getNote(position);  // 懒加载
+        }
+        
+        @Override
+        public long getItemId(int position) {
+            Note note = getItem(position);
+            return note != null ? note.getId() : position;
+        }
+        
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            // 获取 Note 对象（首次访问时才创建）
+            Note note = getItem(position);
+            long noteId = note.getId();
+            
+            // 使用 Note 对象填充视图
+            if (convertView == null) {
+                convertView = getLayoutInflater().inflate(R.layout.note_list_item, parent, false);
+            }
+            
+            // 设置tag，用于后续定位View
+            convertView.setTag(noteId);
+            
+            // 获取基础视图组件
+            TextView contentText = convertView.findViewById(R.id.contentText);
+            TextView timestampText = convertView.findViewById(R.id.timestampText);
+            
+            // 设置内容
+            contentText.setText(note.getContent());
+            timestampText.setText(formatTimestamp(note.getTimestamp()));
+            
+            // 获取花费金额和置顶状态
+            double cost = note.getCost();
+            boolean isPinned = note.isPinned();
+            
+            // 为列表项添加时间区间和标签信息
+            updateListItemWithExtras(convertView, noteId, cost);
+            
+            // 如果置顶，在内容前添加标识（在updateListItemWithExtras之后，确保内容已设置）
+            if (isPinned) {
+                if (contentText != null) {
+                    String currentText = contentText.getText().toString();
+                    // 检查是否已经包含置顶标识，避免重复添加
+                    if (!currentText.startsWith("📌 ")) {
+                        contentText.setText("📌 " + currentText);
+                    }
+                }
+            }
+            
+            // 判断是否显示折叠按钮（传入置顶状态）
+            checkAndShowFoldButton(convertView, noteId, note.getContent(), isPinned);
+            
+            // 处理多选模式下的复选框
+            CheckBox checkBox = convertView.findViewById(R.id.checkBox);
+            if (checkBox != null) {
+                if (isMultiSelectMode) {
+                    checkBox.setVisibility(View.VISIBLE);
+                    checkBox.setChecked(selectedNoteIds.contains(noteId));
+                    
+                    // 设置复选框点击事件
+                    checkBox.setOnClickListener(v -> {
+                        if (checkBox.isChecked()) {
+                            selectedNoteIds.add(noteId);
+                        } else {
+                            selectedNoteIds.remove(noteId);
+                        }
+                        updateMultiSelectMenu();
+                    });
+                } else {
+                    checkBox.setVisibility(View.GONE);
+                }
+            }
+            
+            return convertView;
         }
     }
     
