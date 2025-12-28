@@ -3034,6 +3034,10 @@ public class MainActivity extends AppCompatActivity {
                     // 设置点击事件
                     timelineListView.setOnItemClickListener((parent, view, position, id) -> {
                         Comment item = timelineItems.get(position);
+                        // 跳过日期分割线项
+                        if (item.getItemType() == person.notfresh.noteplus.core.model.TimelineItemType.DATE_DIVIDER) {
+                            return;
+                        }
                         // TODO: 可以在这里添加点击跳转到对应 Note 详情的逻辑
                         // 需要切换到对应项目并打开对应的 Note
                     });
@@ -3086,13 +3090,36 @@ public class MainActivity extends AppCompatActivity {
         
         @Override
         public View getView(int position, View convertView, ViewGroup parent) {
-            View view = convertView;
-            if (view == null) {
-                view = getLayoutInflater().inflate(R.layout.item_timeline, parent, false);
-            }
-            
             Comment comment = items.get(position);
             
+            // 判断是否为日期分割线
+            boolean isDateDivider = comment.getItemType() == person.notfresh.noteplus.core.model.TimelineItemType.DATE_DIVIDER;
+            
+            View view = convertView;
+            // 如果 convertView 类型不匹配，需要重新创建
+            if (view == null || (isDateDivider && view.findViewById(R.id.dateDividerText) == null) ||
+                (!isDateDivider && view.findViewById(R.id.timelineProjectName) == null)) {
+                if (isDateDivider) {
+                    view = getLayoutInflater().inflate(R.layout.item_timeline_date_divider, parent, false);
+                } else {
+                    view = getLayoutInflater().inflate(R.layout.item_timeline, parent, false);
+                }
+            }
+            
+            // 如果是日期分割线，直接设置日期文本并返回
+            if (isDateDivider) {
+                TextView dateDividerText = view.findViewById(R.id.dateDividerText);
+                if (dateDividerText != null) {
+                    String dateText = comment.getContent();
+                    if (dateText == null || dateText.isEmpty()) {
+                        dateText = formatTimestamp(comment.getTimestamp());
+                    }
+                    dateDividerText.setText(dateText);
+                }
+                return view;
+            }
+            
+            // 普通时间线项的原有逻辑
             // 获取视图组件
             TextView projectNameText = view.findViewById(R.id.timelineProjectName);
             TextView itemTypeText = view.findViewById(R.id.timelineItemType);

@@ -3,11 +3,14 @@ package person.notfresh.noteplus.core;
 import person.notfresh.noteplus.db.NoteDbHelper;
 import person.notfresh.noteplus.db.ProjectContextManager;
 import person.notfresh.noteplus.core.model.Comment;
+import person.notfresh.noteplus.core.model.TimelineItemType;
 
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * 全局时间线加载器
@@ -119,6 +122,9 @@ public class GlobalTimeline {
             }
         });
         
+        // 插入日期分割线标记
+        globalTimeline = insertDateDividers(globalTimeline, descending);
+        
         return globalTimeline;
     }
     
@@ -129,5 +135,87 @@ public class GlobalTimeline {
      */
     public List<String> getAllProjects() {
         return projectManager.getProjectList();
+    }
+    
+    /**
+     * 在时间线数据中插入日期分割线标记
+     * 在跨天的地方插入一个特殊的 Comment 对象，itemType 为 DATE_DIVIDER
+     * 
+     * @param timeline 已排序的时间线数据
+     * @param descending 排序方向（用于确定分割线的位置）
+     * @return 插入日期分割线后的时间线数据
+     */
+    private List<Comment> insertDateDividers(List<Comment> timeline, boolean descending) {
+        if (timeline == null || timeline.isEmpty()) {
+            return timeline;
+        }
+        
+        List<Comment> result = new ArrayList<>();
+        
+        // 第一项总是需要显示日期分割线
+        long lastDay = getDayStart(timeline.get(0).getTimestamp());
+        result.add(createDateDivider(timeline.get(0).getTimestamp()));
+        result.add(timeline.get(0));
+        
+        // 遍历后续项，检查是否跨天
+        for (int i = 1; i < timeline.size(); i++) {
+            Comment current = timeline.get(i);
+            long currentDay = getDayStart(current.getTimestamp());
+            
+            // 如果日期不同，插入日期分割线
+            if (currentDay != lastDay) {
+                result.add(createDateDivider(current.getTimestamp()));
+                lastDay = currentDay;
+            }
+            
+            result.add(current);
+        }
+        
+        return result;
+    }
+    
+    /**
+     * 获取指定时间戳所在日期的开始时间（当天 0 点）
+     * 
+     * @param timestamp 时间戳
+     * @return 当天 0 点的时间戳
+     */
+    private long getDayStart(long timestamp) {
+        Calendar cal = Calendar.getInstance(Locale.CHINA);
+        cal.setTimeInMillis(timestamp);
+        cal.set(Calendar.HOUR_OF_DAY, 0);
+        cal.set(Calendar.MINUTE, 0);
+        cal.set(Calendar.SECOND, 0);
+        cal.set(Calendar.MILLISECOND, 0);
+        return cal.getTimeInMillis();
+    }
+    
+    /**
+     * 创建日期分割线标记对象
+     * 
+     * @param timestamp 该日期的时间戳（用于格式化显示）
+     * @return 日期分割线 Comment 对象
+     */
+    private Comment createDateDivider(long timestamp) {
+        Comment divider = new Comment();
+        divider.setItemType(TimelineItemType.DATE_DIVIDER);
+        divider.setTimestamp(timestamp);
+        
+        // 格式化日期文本：yyyy年MM月dd日，星期X
+        Calendar calendar = Calendar.getInstance(Locale.CHINA);
+        calendar.setTimeInMillis(timestamp);
+        
+        java.text.SimpleDateFormat dateFormat = new java.text.SimpleDateFormat("yyyy年MM月dd日", Locale.CHINA);
+        String dateStr = dateFormat.format(new java.util.Date(timestamp));
+        
+        // 获取星期
+        String[] weekDays = {"日", "一", "二", "三", "四", "五", "六"};
+        int dayOfWeek = calendar.get(Calendar.DAY_OF_WEEK) - 1;
+        if (dayOfWeek < 0) dayOfWeek = 0;
+        
+        String dateText = dateStr + "，星期" + weekDays[dayOfWeek];
+        divider.setContent(dateText);
+        
+        return divider;
     }
 }
