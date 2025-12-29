@@ -109,6 +109,7 @@ public class MainActivity extends AppCompatActivity {
     private int inputMode = INPUT_MODE_NORMAL;
     
     private boolean showCost = true; // 默认显示花费
+    private boolean showTimeRange = false; // 默认不显示时间区间
     private boolean timeDescOrder = true; // 默认按时间逆序显示
 
     private boolean isMultiSelectMode = false;
@@ -503,6 +504,16 @@ public class MainActivity extends AppCompatActivity {
             findViewById(R.id.costContainer).setVisibility(View.GONE);
         } else {
             findViewById(R.id.costContainer).setVisibility(View.VISIBLE);
+        }
+        
+        // 加载时间区间显示设置
+        showTimeRange = Boolean.parseBoolean(dbHelper.getSetting(NoteDbHelper.KEY_TIME_RANGE_DISPLAY, "false"));
+        
+        // 根据设置决定是否显示时间区间输入框
+        if (!showTimeRange) {
+            findViewById(R.id.timeRangeContainer).setVisibility(View.GONE);
+        } else {
+            findViewById(R.id.timeRangeContainer).setVisibility(View.VISIBLE);
         }
         
         // 加载时间排序设置
@@ -1637,25 +1648,22 @@ public class MainActivity extends AppCompatActivity {
         PopupMenu popup = new PopupMenu(this, view);
         Menu menu = popup.getMenu();
         
-        // 直接创建项目列表，确保至少包含默认项目
-        List<String> projects = new ArrayList<>();
-        projects.add("default");
-        
-        // 尝试从projectManager获取更多项目
+        // 直接从projectManager获取项目列表（已排序）
+        List<String> finalProjects = new ArrayList<>();
         try {
             List<String> existingProjects = projectManager.getProjectList();
             if (existingProjects != null && !existingProjects.isEmpty()) {
-                projects.addAll(existingProjects);
-            }
+                finalProjects.addAll(existingProjects);
+            } 
         } catch (Exception e) {
             // 如果获取失败，至少确保有默认项目
             e.printStackTrace();
         }
         
-        // 去重并确保默认项目存在
-        Set<String> uniqueProjects = new HashSet<>(projects);
-        uniqueProjects.add("default");
-        final List<String> finalProjects = new ArrayList<>(uniqueProjects);
+        // 确保默认项目存在（如果不存在则添加到末尾）
+        if (!finalProjects.contains("default")) {
+            finalProjects.add("default");
+        }
         
         // 添加所有项目到菜单
         for (int i = 0; i < finalProjects.size(); i++) {
@@ -1712,7 +1720,7 @@ public class MainActivity extends AppCompatActivity {
         builder.setTitle("项目管理");
         
         // 创建一个带图标的列表项
-        String[] options = new String[]{"创建新项目", "重命名项目", "删除项目", "设置默认项目", "回收站"};
+        String[] options = new String[]{"创建新项目", "重命名项目", "删除项目", "设置默认项目", "项目排序", "回收站"};
         
         builder.setItems(options, (dialog, which) -> {
             switch (which) {
@@ -1728,7 +1736,10 @@ public class MainActivity extends AppCompatActivity {
                 case 3: // 设置默认项目
                     showSelectProjectForDefault();
                     break;
-                case 4: // 回收站
+                case 4: // 项目排序
+                    showProjectOrderDialog();
+                    break;
+                case 5: // 回收站
                     showRecycleBinDialog();
                     break;
             }
@@ -1742,24 +1753,24 @@ public class MainActivity extends AppCompatActivity {
      * 显示选择要重命名的项目对话框
      */
     private void showSelectProjectForRename() {
-        // 直接创建项目列表，确保至少包含默认项目
-        List<String> projects = new ArrayList<>();
-        projects.add("default");
-        
-        // 尝试从projectManager获取更多项目
+        // 直接从projectManager获取项目列表（已排序）
+        List<String> finalProjects = new ArrayList<>();
         try {
             List<String> existingProjects = projectManager.getProjectList();
             if (existingProjects != null && !existingProjects.isEmpty()) {
-                projects.addAll(existingProjects);
+                finalProjects.addAll(existingProjects);
+            } else {
+                finalProjects.add("default");
             }
         } catch (Exception e) {
-            // 如果获取失败，至少确保有默认项目
             e.printStackTrace();
+            finalProjects.add("default");
         }
         
-        // 去重并确保默认项目存在
-        Set<String> uniqueProjects = new HashSet<>(projects);
-        final List<String> finalProjects = new ArrayList<>(uniqueProjects);
+        // 确保默认项目存在
+        if (!finalProjects.contains("default")) {
+            finalProjects.add("default");
+        }
         
         String[] items = new String[finalProjects.size()];
         
@@ -1786,28 +1797,212 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * 显示选择要设置为默认的项目对话框
+     * 显示项目排序对话框
      */
-    private void showSelectProjectForDefault() {
-        // 直接创建项目列表，确保至少包含默认项目
-        List<String> projects = new ArrayList<>();
-        projects.add("default");
+    private void showProjectOrderDialog() {
+        // 获取保存的顺序（用于调试）
+        List<String> savedOrder = projectManager.getProjectOrderForDebug();
+        android.util.Log.d("ProjectOrder", "保存的顺序: " + savedOrder.toString());
         
-        // 尝试从projectManager获取更多项目
+        // 获取当前项目列表（已排序，应该反映保存的顺序）
+        List<String> projects = new ArrayList<>();
         try {
             List<String> existingProjects = projectManager.getProjectList();
             if (existingProjects != null && !existingProjects.isEmpty()) {
                 projects.addAll(existingProjects);
             }
         } catch (Exception e) {
-            // 如果获取失败，至少确保有默认项目
             e.printStackTrace();
         }
         
-        // 去重并确保默认项目存在
-        Set<String> uniqueProjects = new HashSet<>(projects);
-        uniqueProjects.add("default");
-        final List<String> finalProjects = new ArrayList<>(uniqueProjects);
+        android.util.Log.d("ProjectOrder", "加载后的顺序: " + projects.toString());
+        
+        // 确保至少包含默认项目
+        if (!projects.contains("default")) {
+            projects.add("default");
+        }
+        
+        if (projects.isEmpty()) {
+            Toast.makeText(this, "没有可排序的项目", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        // 创建可编辑的项目列表副本（用于排序操作）
+        // 注意：这个列表应该已经按照保存的顺序排列了
+        final List<String> orderedProjects = new ArrayList<>(projects);
+        
+        // 创建自定义对话框
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("项目排序");
+        
+        // 创建自定义布局
+        View dialogView = getLayoutInflater().inflate(R.layout.dialog_project_order, null);
+        builder.setView(dialogView);
+        
+        // 获取 ListView
+        ListView listView = dialogView.findViewById(R.id.projectOrderListView);
+        
+        // 创建适配器
+        ProjectOrderAdapter adapter = new ProjectOrderAdapter(orderedProjects);
+        listView.setAdapter(adapter);
+        
+        // 创建对话框
+        AlertDialog dialog = builder.create();
+        
+        // 设置保存按钮
+        Button saveButton = dialogView.findViewById(R.id.btnSaveProjectOrder);
+        saveButton.setOnClickListener(v -> {
+            // 保存排序（直接保存用户操作的顺序，不做任何修改）
+            if (projectManager.setProjectOrder(orderedProjects)) {
+                // 立即验证：重新获取保存的顺序
+                List<String> savedOrderAfterSave = projectManager.getProjectOrderForDebug();
+                
+                // 验证保存的顺序是否与用户操作的顺序一致
+                boolean orderMatches = true;
+                if (savedOrderAfterSave.size() == orderedProjects.size()) {
+                    for (int i = 0; i < orderedProjects.size(); i++) {
+                        if (!orderedProjects.get(i).equals(savedOrderAfterSave.get(i))) {
+                            orderMatches = false;
+                            break;
+                        }
+                    }
+                } else {
+                    orderMatches = false;
+                }
+                
+                if (orderMatches) {
+                    Toast.makeText(this, "项目顺序已保存", Toast.LENGTH_SHORT).show();
+                } else {
+                    // 显示调试信息
+                    android.util.Log.e("ProjectOrder", "保存顺序: " + savedOrderAfterSave.toString());
+                    android.util.Log.e("ProjectOrder", "期望顺序: " + orderedProjects.toString());
+                    Toast.makeText(this, "顺序已保存，但验证不匹配（请查看日志）", Toast.LENGTH_LONG).show();
+                }
+                dialog.dismiss();
+            } else {
+                Toast.makeText(this, "保存失败", Toast.LENGTH_SHORT).show();
+            }
+        });
+        
+        // 设置取消按钮
+        Button cancelButton = dialogView.findViewById(R.id.btnCancelProjectOrder);
+        cancelButton.setOnClickListener(v -> dialog.dismiss());
+        
+        dialog.show();
+        
+        // 设置对话框窗口大小
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setLayout(
+                (int) (getResources().getDisplayMetrics().widthPixels * 0.9),
+                (int) (getResources().getDisplayMetrics().heightPixels * 0.7)
+            );
+        }
+    }
+    
+    /**
+     * 项目排序列表适配器
+     */
+    private class ProjectOrderAdapter extends android.widget.BaseAdapter {
+        private final List<String> projects;
+        
+        public ProjectOrderAdapter(List<String> projects) {
+            this.projects = projects;
+        }
+        
+        @Override
+        public int getCount() {
+            return projects.size();
+        }
+        
+        @Override
+        public String getItem(int position) {
+            return projects.get(position);
+        }
+        
+        @Override
+        public long getItemId(int position) {
+            return position;
+        }
+        
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            if (convertView == null) {
+                convertView = getLayoutInflater().inflate(R.layout.item_project_order, parent, false);
+            }
+            
+            TextView projectNameText = convertView.findViewById(R.id.projectOrderNameText);
+            ImageButton btnMoveUp = convertView.findViewById(R.id.btnMoveUp);
+            ImageButton btnMoveDown = convertView.findViewById(R.id.btnMoveDown);
+            
+            String projectName = getItem(position);
+            String displayName = projectName;
+            
+            // 标记默认项目
+            if (projectManager.isDefaultProject(projectName)) {
+                displayName = "★ " + projectName + " (默认)";
+            }
+            
+            // 标记当前项目
+            if (projectName.equals(projectManager.getCurrentProject())) {
+                displayName = "✓ " + displayName;
+            }
+            
+            projectNameText.setText(displayName);
+            
+            // 设置上移按钮状态和点击事件
+            boolean canMoveUp = position > 0;
+            btnMoveUp.setEnabled(canMoveUp);
+            btnMoveUp.setAlpha(canMoveUp ? 1.0f : 0.3f);
+            btnMoveUp.setOnClickListener(v -> {
+                if (position > 0) {
+                    // 交换位置
+                    String temp = projects.get(position);
+                    projects.set(position, projects.get(position - 1));
+                    projects.set(position - 1, temp);
+                    notifyDataSetChanged();
+                }
+            });
+            
+            // 设置下移按钮状态和点击事件
+            boolean canMoveDown = position < projects.size() - 1;
+            btnMoveDown.setEnabled(canMoveDown);
+            btnMoveDown.setAlpha(canMoveDown ? 1.0f : 0.3f);
+            btnMoveDown.setOnClickListener(v -> {
+                if (position < projects.size() - 1) {
+                    // 交换位置
+                    String temp = projects.get(position);
+                    projects.set(position, projects.get(position + 1));
+                    projects.set(position + 1, temp);
+                    notifyDataSetChanged();
+                }
+            });
+            
+            return convertView;
+        }
+    }
+    
+    /**
+     * 显示选择要设置为默认的项目对话框
+     */
+    private void showSelectProjectForDefault() {
+        // 直接从projectManager获取项目列表（已排序）
+        List<String> finalProjects = new ArrayList<>();
+        try {
+            List<String> existingProjects = projectManager.getProjectList();
+            if (existingProjects != null && !existingProjects.isEmpty()) {
+                finalProjects.addAll(existingProjects);
+            } else {
+                finalProjects.add("default");
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            finalProjects.add("default");
+        }
+        
+        // 确保默认项目存在
+        if (!finalProjects.contains("default")) {
+            finalProjects.add("default");
+        }
         
         // 创建显示项（保持默认项目标识）
         String[] items = new String[finalProjects.size()];
@@ -1848,25 +2043,24 @@ public class MainActivity extends AppCompatActivity {
      * 显示选择要删除的项目对话框
      */
     private void showSelectProjectForDelete() {
-        // 直接创建项目列表，确保至少包含默认项目
-        List<String> projects = new ArrayList<>();
-        projects.add("default");
-        
-        // 尝试从projectManager获取更多项目
+        // 直接从projectManager获取项目列表（已排序）
+        List<String> allProjects = new ArrayList<>();
         try {
             List<String> existingProjects = projectManager.getProjectList();
             if (existingProjects != null && !existingProjects.isEmpty()) {
-                projects.addAll(existingProjects);
+                allProjects.addAll(existingProjects);
+            } else {
+                allProjects.add("default");
             }
         } catch (Exception e) {
-            // 如果获取失败，至少确保有默认项目
             e.printStackTrace();
+            allProjects.add("default");
         }
         
-        // 去重并确保默认项目存在
-        Set<String> uniqueProjects = new HashSet<>(projects);
-        uniqueProjects.add("default");
-        List<String> allProjects = new ArrayList<>(uniqueProjects);
+        // 确保默认项目存在
+        if (!allProjects.contains("default")) {
+            allProjects.add("default");
+        }
         
         // 移除默认项目，防止被删除
         String defaultProject = projectManager.getDefaultProject();
@@ -2794,8 +2988,45 @@ public class MainActivity extends AppCompatActivity {
             if (rowsDeleted > 0) {
                 Toast.makeText(this, "记录已删除", Toast.LENGTH_SHORT).show();
                 
-                // 刷新列表
-                loadMoments();
+                // 保存当前滚动位置
+                int firstVisiblePosition = momentsListView.getFirstVisiblePosition();
+                View firstVisibleView = momentsListView.getChildAt(0);
+                int scrollOffset = 0;
+                if (firstVisibleView != null) {
+                    scrollOffset = firstVisibleView.getTop();
+                }
+                
+                // 重新查询 Cursor（Cursor 是查询时的快照，删除后需要重新查询才能反映最新数据）
+                // 使用同一个数据库连接，查询最新的数据
+                String orderBy = NoteDbHelper.COLUMN_IS_PINNED + " DESC, " + 
+                        (timeDescOrder ? 
+                        NoteDbHelper.COLUMN_TIMESTAMP + " DESC" : 
+                        NoteDbHelper.COLUMN_TIMESTAMP + " ASC");
+                
+                Cursor newCursor = db.query(
+                        NoteDbHelper.TABLE_NOTES,
+                        new String[]{"_id", NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP, NoteDbHelper.COLUMN_COST, NoteDbHelper.COLUMN_IS_PINNED},
+                        null, null, null, null,
+                        orderBy
+                );
+                
+                // 更新 wrapper 的 Cursor（会自动清空缓存）
+                if (noteCursorWrapper != null) {
+                    noteCursorWrapper.setCursor(newCursor);
+                    // 刷新适配器，ListView 会自动移除不存在的项，下面的项会自动浮上来
+                    if (noteListAdapter != null) {
+                        noteListAdapter.notifyDataSetChanged();
+                        // 恢复滚动位置
+                        if (firstVisiblePosition >= 0) {
+                            // 如果删除后列表变短，调整 position
+                            int adjustedPosition = firstVisiblePosition;
+                            if (adjustedPosition >= noteListAdapter.getCount()) {
+                                adjustedPosition = Math.max(0, noteListAdapter.getCount() - 1);
+                            }
+                            momentsListView.setSelectionFromTop(adjustedPosition, scrollOffset);
+                        }
+                    }
+                }
             }
         } finally {
             // 结束事务
@@ -2813,6 +3044,11 @@ public class MainActivity extends AppCompatActivity {
         // 创建设置对话框布局
         View settingsView = getLayoutInflater().inflate(R.layout.dialog_settings, null);
         builder.setView(settingsView);
+        
+        // 初始化时间区间显示开关
+        Switch timeRangeDisplaySwitch = settingsView.findViewById(R.id.switchTimeRangeDisplay);
+        String currentTimeRangeDisplayValue = dbHelper.getSetting(NoteDbHelper.KEY_TIME_RANGE_DISPLAY, "false");
+        timeRangeDisplaySwitch.setChecked(Boolean.parseBoolean(currentTimeRangeDisplayValue));
         
         // 初始化时间范围必填开关
         Switch timeRangeRequiredSwitch = settingsView.findViewById(R.id.switchTimeRangeRequired);
@@ -2852,6 +3088,10 @@ public class MainActivity extends AppCompatActivity {
         
         // 保存按钮点击事件处理
         builder.setPositiveButton("保存", (dialog, which) -> {
+            // 保存时间区间显示设置
+            boolean isTimeRangeDisplay = timeRangeDisplaySwitch.isChecked();
+            dbHelper.saveSetting(NoteDbHelper.KEY_TIME_RANGE_DISPLAY, String.valueOf(isTimeRangeDisplay));
+            
             // 保存时间范围设置
             boolean isTimeRangeRequired = timeRangeRequiredSwitch.isChecked();
             dbHelper.saveSetting(NoteDbHelper.KEY_TIME_RANGE_REQUIRED, String.valueOf(isTimeRangeRequired));
@@ -3651,23 +3891,24 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        // 获取所有项目列表
-        List<String> projects = new ArrayList<>();
-        projects.add("default");
-        
+        // 直接从projectManager获取项目列表（已排序）
+        List<String> finalProjects = new ArrayList<>();
         try {
             List<String> existingProjects = projectManager.getProjectList();
             if (existingProjects != null && !existingProjects.isEmpty()) {
-                projects.addAll(existingProjects);
+                finalProjects.addAll(existingProjects);
+            } else {
+                finalProjects.add("default");
             }
         } catch (Exception e) {
             e.printStackTrace();
+            finalProjects.add("default");
         }
         
-        // 去重并确保默认项目存在
-        Set<String> uniqueProjects = new HashSet<>(projects);
-        uniqueProjects.add("default");
-        final List<String> finalProjects = new ArrayList<>(uniqueProjects);
+        // 确保默认项目存在
+        if (!finalProjects.contains("default")) {
+            finalProjects.add("default");
+        }
         
         // 移除当前项目
         String currentProject = projectManager.getCurrentProject();

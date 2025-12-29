@@ -45,6 +45,7 @@ public class NoteDbHelper extends SQLiteOpenHelper {
     public static final String COLUMN_COMMENT_COST = "cost";
 
     public static final String KEY_TIME_RANGE_REQUIRED = "time_range_required";
+    public static final String KEY_TIME_RANGE_DISPLAY = "time_range_display";
     public static final String KEY_COST_DISPLAY = "cost_display";
     public static final String KEY_COST_REQUIRED = "cost_required";
     public static final String KEY_TIME_DESC_ORDER = "time_desc_order";

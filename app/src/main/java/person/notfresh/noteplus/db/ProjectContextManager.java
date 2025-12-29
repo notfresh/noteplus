@@ -22,6 +22,8 @@ public class ProjectContextManager {
     private static final String DEFAULT_PROJECT = "default";
     private static final String KEY_RECYCLED_PROJECTS = "recycled_projects";
     private static final String KEY_DEFAULT_PROJECT = "default_project";
+    private static final String KEY_PROJECT_ORDER = "project_order";
+    private static final String ORDER_SEPARATOR = ",";
     
     private Context appContext;
     private NoteDbHelper currentDbHelper;
@@ -146,7 +148,7 @@ public class ProjectContextManager {
     }
     
     /**
-     * 获取项目列表
+     * 获取项目列表（按保存的顺序排序）
      */
     public List<String> getProjectList() {
         Set<String> projectSet = preferences.getStringSet(KEY_PROJECT_LIST, new HashSet<>());
@@ -158,7 +160,139 @@ public class ProjectContextManager {
             saveProjectList(projectList);
         }
         
-        return projectList;
+        // 应用排序
+        return applyProjectOrder(projectList);
+    }
+    
+    /**
+     * 根据保存的顺序对项目列表进行排序
+     * @param projectList 原始项目列表
+     * @return 排序后的项目列表
+     */
+    private List<String> applyProjectOrder(List<String> projectList) {
+        List<String> orderedList = getProjectOrder();
+        
+        // 如果没有保存的顺序，使用默认排序（字母顺序）
+        if (orderedList.isEmpty()) {
+            List<String> sorted = new ArrayList<>(projectList);
+            sorted.sort(String::compareToIgnoreCase);
+            return sorted;
+        }
+        
+        // 将项目列表转换为 Set，用于快速查找
+        Set<String> projectSet = new HashSet<>(projectList);
+        
+        // 按照保存的顺序排序
+        List<String> result = new ArrayList<>();
+        Set<String> addedProjects = new HashSet<>();
+        
+        // 先添加有序列表中的项目（严格按照保存的顺序）
+        for (String projectName : orderedList) {
+            if (projectSet.contains(projectName)) {
+                result.add(projectName);
+                addedProjects.add(projectName);
+            }
+            // 如果项目不存在于当前项目列表中，跳过（可能是已删除的项目）
+        }
+        
+        // 再添加不在顺序列表中的新项目（按字母顺序）
+        List<String> newProjects = new ArrayList<>();
+        for (String project : projectList) {
+            if (!addedProjects.contains(project)) {
+                newProjects.add(project);
+            }
+        }
+        newProjects.sort(String::compareToIgnoreCase);
+        result.addAll(newProjects);
+        
+        return result;
+    }
+    
+    /**
+     * 获取保存的项目顺序
+     * @return 项目顺序列表
+     */
+    private List<String> getProjectOrder() {
+        String orderString = preferences.getString(KEY_PROJECT_ORDER, "");
+        if (orderString == null || orderString.isEmpty()) {
+            return new ArrayList<>();
+        }
+        
+        List<String> orderList = new ArrayList<>();
+        String[] items = orderString.split(ORDER_SEPARATOR);
+        for (String item : items) {
+            String trimmed = item.trim();
+            if (!trimmed.isEmpty()) {
+                orderList.add(trimmed);
+            }
+        }
+        return orderList;
+    }
+    
+    /**
+     * 获取保存的项目顺序（用于调试）
+     * @return 项目顺序列表
+     */
+    public List<String> getProjectOrderForDebug() {
+        return getProjectOrder();
+    }
+    
+    /**
+     * 保存项目顺序
+     * @param orderedProjects 有序的项目列表
+     */
+    private void saveProjectOrder(List<String> orderedProjects) {
+        if (orderedProjects == null || orderedProjects.isEmpty()) {
+            preferences.edit().remove(KEY_PROJECT_ORDER).commit();
+            return;
+        }
+        
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < orderedProjects.size(); i++) {
+            if (i > 0) {
+                sb.append(ORDER_SEPARATOR);
+            }
+            sb.append(orderedProjects.get(i));
+        }
+        // 使用 commit() 确保立即保存，而不是异步的 apply()
+        preferences.edit().putString(KEY_PROJECT_ORDER, sb.toString()).commit();
+    }
+    
+    /**
+     * 设置项目顺序
+     * @param orderedProjects 有序的项目列表
+     * @return 是否设置成功
+     */
+    public boolean setProjectOrder(List<String> orderedProjects) {
+        if (orderedProjects == null || orderedProjects.isEmpty()) {
+            return false;
+        }
+        
+        // 获取所有现有项目
+        Set<String> allProjectsSet = preferences.getStringSet(KEY_PROJECT_LIST, new HashSet<>());
+        List<String> allProjects = new ArrayList<>(allProjectsSet);
+        
+        // 确保默认项目存在
+        if (!allProjects.contains(DEFAULT_PROJECT)) {
+            allProjects.add(DEFAULT_PROJECT);
+        }
+        
+        // 如果传入的顺序列表不完整，补充缺失的项目到末尾（保持用户操作的顺序）
+        Set<String> orderSet = new HashSet<>(orderedProjects);
+        List<String> completeOrder = new ArrayList<>(orderedProjects);
+        
+        for (String project : allProjects) {
+            if (!orderSet.contains(project)) {
+                completeOrder.add(project);
+            }
+        }
+        
+        // 保存完整的顺序列表
+        saveProjectOrder(completeOrder);
+        
+        // 验证保存是否成功
+        String savedOrder = preferences.getString(KEY_PROJECT_ORDER, "");
+        return !savedOrder.isEmpty();
     }
     
     /**
@@ -167,8 +301,18 @@ public class ProjectContextManager {
     private void addProjectToList(String projectName) {
         Set<String> projectSet = preferences.getStringSet(KEY_PROJECT_LIST, new HashSet<>());
         Set<String> newSet = new HashSet<>(projectSet);
+        boolean isNew = !newSet.contains(projectName);
         newSet.add(projectName);
         preferences.edit().putStringSet(KEY_PROJECT_LIST, newSet).apply();
+        
+        // 如果是新项目，追加到顺序列表末尾
+        if (isNew) {
+            List<String> orderList = getProjectOrder();
+            if (!orderList.contains(projectName)) {
+                orderList.add(projectName);
+                saveProjectOrder(orderList);
+            }
+        }
     }
     
     /**
@@ -255,6 +399,11 @@ public class ProjectContextManager {
             projects.remove(projectName);
             saveProjectList(projects);
             
+            // 3.3. 从顺序列表中移除
+            List<String> orderList = getProjectOrder();
+            orderList.remove(projectName);
+            saveProjectOrder(orderList);
+            
             // 3.5. 如果删除的是上一个项目，清除记录
             if (projectName.equals(previousProjectName)) {
                 previousProjectName = null;
@@ -317,6 +466,14 @@ public class ProjectContextManager {
         if (oldName.equals(currentProjectName)) {
             currentProjectName = newName;
             preferences.edit().putString(KEY_CURRENT_PROJECT, newName).apply();
+        }
+        
+        // 更新顺序列表中的项目名称
+        List<String> orderList = getProjectOrder();
+        int index = orderList.indexOf(oldName);
+        if (index >= 0) {
+            orderList.set(index, newName);
+            saveProjectOrder(orderList);
         }
         
         // 重命名数据库文件
@@ -385,6 +542,11 @@ public class ProjectContextManager {
             projects.remove(projectName);
             saveProjectList(projects);
             
+            // 3.3. 从顺序列表中移除
+            List<String> orderList = getProjectOrder();
+            orderList.remove(projectName);
+            saveProjectOrder(orderList);
+            
             // 3.5. 如果删除的是上一个项目，清除记录
             if (projectName.equals(previousProjectName)) {
                 previousProjectName = null;
@@ -415,6 +577,13 @@ public class ProjectContextManager {
         
         // 2. 添加回项目列表
         addProjectToList(projectName);
+        
+        // 3. 确保项目在顺序列表中（如果不在，追加到末尾）
+        List<String> orderList = getProjectOrder();
+        if (!orderList.contains(projectName)) {
+            orderList.add(projectName);
+            saveProjectOrder(orderList);
+        }
         
         return true;
     }

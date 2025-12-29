@@ -12,22 +12,37 @@ import java.util.Map;
  * 在 getView() 时才从 Cursor 创建 Note 对象，避免一次性加载所有数据
  */
 public class NoteCursorWrapper {
-    private final Cursor cursor;
+    private Cursor cursor;
     private final String projectName;
-    private final int idIndex, contentIndex, timestampIndex, costIndex, pinnedIndex;
+    private int idIndex, contentIndex, timestampIndex, costIndex, pinnedIndex;
     
     // 缓存已创建的 Note 对象（按 position 缓存）
     private final Map<Integer, Note> noteCache = new HashMap<>();
     
     public NoteCursorWrapper(Cursor cursor, String projectName) {
-        this.cursor = cursor;
         this.projectName = projectName;
-        // 缓存列索引，避免重复查找
-        idIndex = cursor.getColumnIndexOrThrow("_id");
-        contentIndex = cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_CONTENT);
-        timestampIndex = cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TIMESTAMP);
-        costIndex = cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COST);
-        pinnedIndex = cursor.getColumnIndex(NoteDbHelper.COLUMN_IS_PINNED);
+        setCursor(cursor);
+    }
+    
+    /**
+     * 更新 Cursor（用于数据变化后刷新）
+     */
+    public void setCursor(Cursor newCursor) {
+        // 关闭旧的 Cursor
+        if (this.cursor != null && !this.cursor.isClosed()) {
+            this.cursor.close();
+        }
+        this.cursor = newCursor;
+        // 清空缓存
+        noteCache.clear();
+        // 重新缓存列索引
+        if (cursor != null) {
+            idIndex = cursor.getColumnIndexOrThrow("_id");
+            contentIndex = cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_CONTENT);
+            timestampIndex = cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TIMESTAMP);
+            costIndex = cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COST);
+            pinnedIndex = cursor.getColumnIndex(NoteDbHelper.COLUMN_IS_PINNED);
+        }
     }
     
     /**
