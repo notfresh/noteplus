@@ -319,3 +319,142 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
 - 阶段6：1 天（清理和测试）
 
 这个方案改动更小，主要做代码迁移，不新增过多抽象。请说明你的思路，我可以据此进一步调整。
+
+
+# 重构清算
+
+检查 MainActivity 中的兼容旧代码，谨慎删除。先检查关键部分：
+
+
+[5 tools called]
+
+
+检查哪些兼容代码可以安全删除：
+
+
+[4 tools called]
+
+
+检查可安全删除的兼容代码：
+
+
+[3 tools called]
+
+
+删除兼容旧代码，保留关键部分：
+
+
+[12 tools called]
+
+
+继续删除旧的 NoteListAdapter 类和其他兼容代码：
+
+
+[6 tools called]
+
+
+删除旧的 NoteListAdapter 类，并清理其他兼容代码：
+
+
+[4 tools called]
+
+
+删除旧的 NoteListAdapter 类：
+
+
+[4 tools called]
+
+
+简化已迁移的方法，删除兼容代码：
+
+
+[4 tools called]
+
+
+检查这些已迁移方法是否仍被调用：
+
+
+[4 tools called]
+
+
+修复 `updateSingleNoteView` 中对已删除变量的引用，并简化已迁移方法中对旧变量的使用：
+
+
+[8 tools called]
+
+
+继续修复剩余问题：
+
+
+[4 tools called]
+
+
+修复 `updateSingleNoteView` 中对已删除变量的引用：
+
+
+[4 tools called]
+
+
+检查并修复编译错误：
+
+
+[3 tools called]
+
+
+检查是否还有其他需要清理的地方：
+
+
+[4 tools called]
+
+
+删除不再使用的导入：
+
+
+[2 tools called]
+
+
+已清理 MainActivity 中的兼容旧代码。总结如下：
+
+## 清理总结
+
+### 已删除的成员变量
+1. `noteListAdapter` - 已迁移到 `NoteListManager`
+2. `noteCursorWrapper` - 已迁移到 `NoteListManager`
+3. `foldedNoteIds` - 已迁移到 `NoteListManager`
+4. `expandedComments` - 已迁移到 `NoteListManager`
+
+### 已删除的类
+1. `NoteListAdapter` 内部类 - 已迁移到 `NoteListManager`
+
+### 已简化的方法
+1. `loadMoments()` - 删除兼容代码，仅委托给 `NoteListManager`
+2. `saveMoment()` - 删除兼容代码，仅调用 `noteListManager.refreshNotes()`
+3. `deleteNote()` - 删除兼容代码，仅委托给 `NoteListManager`
+4. `toggleMultiSelectMode()` - 删除兼容代码
+5. `exitMultiSelectMode()` - 删除兼容代码
+6. `updateSingleNoteView()` - 简化为仅委托给 `NoteListManager`
+7. `loadFoldedNoteIds()` - 简化为仅委托给 `NoteListManager`
+8. `onDestroy()` - 删除 `noteCursorWrapper` 清理代码
+
+### 已删除的导入
+1. `NoteCursorWrapper` - 不再使用
+
+### 保留的关键方法
+以下方法标记为 `@Deprecated`，但保留实现，因为可能仍被其他代码调用：
+- `updateListItemWithExtras()` - 可能被其他适配器使用
+- `addTimeRangeInfo()` - 可能被其他适配器使用
+- `addTagsInfo()` - 可能被其他适配器使用
+- `addCommentsInfo()` - 可能被其他适配器使用
+- `checkAndShowFoldButton()` - 可能被其他适配器使用
+- `displayComments()` - 可能被其他适配器使用
+- `toggleCommentsExpanded()` - 可能被其他适配器使用
+- `updateExpandCollapseButton()` - 可能被其他适配器使用
+- `formatTimestamp()`, `dpToPx()`, `formatCommentTimestamp()` - 委托给 `DisplayUtil`，保持向后兼容
+
+### 代码质量
+- 无编译错误
+- 无语法错误（linter 警告仅为 classpath 相关）
+- 代码更简洁，移除了约 200+ 行兼容代码
+- 保留了关键方法的签名，确保向后兼容
+
+MainActivity 已清理，代码更简洁，同时保留了必要的向后兼容性。
