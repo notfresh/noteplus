@@ -20,50 +20,16 @@
 		android:orientation="horizontal"
 		android:padding="8dp">
 
-		<LinearLayout
+		<EditText
+			android:id="@+id/momentEditText"
 			android:layout_width="0dp"
 			android:layout_height="wrap_content"
 			android:layout_weight="1"
-			android:orientation="vertical">
-
-			<EditText
-				android:id="@+id/momentEditText"
-				android:layout_width="match_parent"
-				android:layout_height="wrap_content"
-				android:hint="现在你在做什么?想什么?"
-				android:inputType="textMultiLine"
-				android:maxLines="3"
-				android:minLines="1"
-				android:padding="12dp" />
-		</LinearLayout>
-
-		<!-- 麦克风按钮（语音输入） -->
-		<ImageButton
-			android:id="@+id/voiceInputButton"
-			android:layout_width="32dp"
-			android:layout_height="32dp"
-			android:layout_gravity="top"
-			android:layout_marginStart="4dp"
-			android:layout_marginTop="8dp"
-			android:background="?attr/selectableItemBackgroundBorderless"
-			android:contentDescription="语音输入"
-			android:src="@drawable/ic_mic"
-			android:alpha="0.6"
-			android:tint="#757575" />
-
-		<!-- 图片按钮（图片记录） -->
-		<ImageButton
-			android:id="@+id/imageInputButton"
-			android:layout_width="32dp"
-			android:layout_height="32dp"
-			android:layout_gravity="top"
-			android:layout_marginStart="4dp"
-			android:layout_marginTop="8dp"
-			android:background="?attr/selectableItemBackgroundBorderless"
-			android:contentDescription="添加图片"
-			android:src="@drawable/ic_image"
-			android:alpha="0.6"
-			android:tint="#757575" />
+			android:hint="现在你在做什么?想什么?"
+			android:inputType="textMultiLine"
+			android:maxLines="3"
+			android:minLines="1"
+			android:padding="12dp" />
 
 		<ImageButton
 			android:id="@+id/expandButton"
@@ -168,17 +134,49 @@
 			android:layout_width="match_parent"
 			android:layout_height="wrap_content" />
 
-		<!-- 添加标签按钮 -->
-		<Button
-			android:id="@+id/addTagButton"
-			android:layout_width="wrap_content"
-			android:layout_height="40dp"
+		<!-- 操作按钮行：语音、图片、添加标签 -->
+		<LinearLayout
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:orientation="horizontal"
 			android:layout_marginTop="4dp"
-			android:text="添加标签"
-			android:textSize="14sp"
-			android:minWidth="0dp"
-			android:paddingStart="12dp"
-			android:paddingEnd="12dp" />
+			android:gravity="center_vertical">
+
+			<!-- 麦克风按钮（语音输入） -->
+			<ImageButton
+				android:id="@+id/voiceInputButton"
+				android:layout_width="32dp"
+				android:layout_height="32dp"
+				android:background="?attr/selectableItemBackgroundBorderless"
+				android:contentDescription="语音输入"
+				android:src="@drawable/ic_mic"
+				android:alpha="0.6"
+				android:tint="#757575" />
+
+			<!-- 图片按钮（图片记录） -->
+			<ImageButton
+				android:id="@+id/imageInputButton"
+				android:layout_width="32dp"
+				android:layout_height="32dp"
+				android:layout_marginStart="8dp"
+				android:background="?attr/selectableItemBackgroundBorderless"
+				android:contentDescription="添加图片"
+				android:src="@drawable/ic_image"
+				android:alpha="0.6"
+				android:tint="#757575" />
+
+			<!-- 添加标签按钮 -->
+			<Button
+				android:id="@+id/addTagButton"
+				android:layout_width="wrap_content"
+				android:layout_height="40dp"
+				android:layout_marginStart="8dp"
+				android:text="添加标签"
+				android:textSize="14sp"
+				android:minWidth="0dp"
+				android:paddingStart="12dp"
+				android:paddingEnd="12dp" />
+		</LinearLayout>
 	</LinearLayout>
 
 	<ListView
