@@ -1,4 +1,4 @@
-package person.notfresh.noteplus.util;
+package person.notfresh.noteplus.manager;
 
 import android.database.Cursor;
 import person.notfresh.noteplus.core.model.Note;

@@ -22,19 +22,23 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
 import androidx.appcompat.app.AlertDialog;
 
 import person.notfresh.noteplus.R;
+import person.notfresh.noteplus.core.TimeRangeFilter;
+import person.notfresh.noteplus.core.model.Comment;
 import person.notfresh.noteplus.core.model.Note;
 import person.notfresh.noteplus.db.NoteDbHelper;
 import person.notfresh.noteplus.manager.INoteListCallback;
 import person.notfresh.noteplus.util.DisplayUtil;
-import person.notfresh.noteplus.util.NoteCursorWrapper;
+import person.notfresh.noteplus.manager.NoteCursorWrapper;
 import person.notfresh.noteplus.util.StringUtil;
 
 /**
@@ -97,20 +101,9 @@ public class NoteListManager {
             return;
         }
         
-        SQLiteDatabase db = dbHelper.getReadableDatabase();
-        // 根据设置决定排序方式，置顶的记录排在最前面
+        // 使用NoteDbHelper封装的方法加载笔记
         boolean timeDescOrder = callback.getTimeDescOrder();
-        String orderBy = NoteDbHelper.COLUMN_IS_PINNED + " DESC, " + 
-                (timeDescOrder ? 
-                NoteDbHelper.COLUMN_TIMESTAMP + " DESC" : 
-                NoteDbHelper.COLUMN_TIMESTAMP + " ASC");
-        
-        Cursor cursor = db.query(
-                NoteDbHelper.TABLE_NOTES,
-                new String[]{"_id", NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP, NoteDbHelper.COLUMN_COST, NoteDbHelper.COLUMN_IS_PINNED},
-                null, null, null, null,
-                orderBy
-        );
+        Cursor cursor = dbHelper.loadNotes(timeDescOrder);
 
         // 创建 Cursor 包装器
         String currentProject = callback.getProjectManager().getCurrentProject();
@@ -286,6 +279,65 @@ public class NoteListManager {
     // ========== 数据操作方法（从 MainActivity 迁移） ==========
     
     /**
+     * 根据 noteId 和 TimeRangeFilter 找到附近的 Note 列表
+     * TimeRangeFilter 相当于一个时间距离，前后的都可以
+     * 
+     * @param noteId 目标笔记ID
+     * @param timeRange 时间范围过滤器（如最近1天、最近7天、最近30天）
+     * @return 在时间范围内的 Note 列表
+     */
+    public List<Note> getNearNotes(long noteId, TimeRangeFilter timeRange) {
+        List<Note> result = new ArrayList<>();
+        
+        if (adapter == null) {
+            return result;
+        }
+        
+        // 1. 先找到指定 noteId 的 Note，获取它的 timestamp
+        Note targetNote = null;
+        for (int i = 0; i < adapter.getCount(); i++) {
+            Note note = adapter.getItem(i);
+            if (note != null && note.getId() == noteId) {
+                targetNote = note;
+                break;
+            }
+        }
+        
+        // 如果找不到目标 Note，返回空列表
+        if (targetNote == null) {
+            return result;
+        }
+        
+        long targetTimestamp = targetNote.getTimestamp();
+        
+        // 2. 根据 TimeRangeFilter 计算时间范围（前后都可以）
+        // 将天数转换为毫秒数
+        int days = timeRange.getDays();
+        long timeRangeMillis = days * 24L * 60L * 60L * 1000L;
+        
+        // 计算时间范围的起始和结束时间
+        long startTime = targetTimestamp - timeRangeMillis;
+        long endTime = targetTimestamp + timeRangeMillis;
+        
+        // 3. 遍历 adapter 中的所有 Note，筛选出在时间范围内的 Note
+        for (int i = 0; i < adapter.getCount(); i++) {
+            Note note = adapter.getItem(i);
+            if (note != null) {
+                long noteTimestamp = note.getTimestamp();
+                // 检查是否在时间范围内（包含边界）
+                if (noteTimestamp >= startTime && noteTimestamp <= endTime) {
+                    result.add(note);
+                }
+            }
+        }
+        
+        // 4. 按时间逆序排序（最新的在前）
+        result.sort((note1, note2) -> Long.compare(note2.getTimestamp(), note1.getTimestamp()));
+        
+        return result;
+    }
+
+    /**
      * 删除笔记
      * 从 MainActivity.deleteNote() 迁移
      * @param noteId 笔记ID
@@ -296,87 +348,46 @@ public class NoteListManager {
         }
         
         NoteDbHelper dbHelper = callback.getDbHelper();
-        if (dbHelper == null) {
+        Context context = callback.getContext();
+        if (dbHelper == null || context == null) {
             return;
         }
         
-        SQLiteDatabase db = dbHelper.getWritableDatabase();
+        // 使用NoteDbHelper封装的方法删除笔记
+        int rowsDeleted = dbHelper.deleteNote(noteId);
         
-        // 开始事务
-        db.beginTransaction();
-        try {
-            // 1. 删除相关的标签关联
-            db.delete(
-                NoteDbHelper.TABLE_NOTE_TAGS,
-                NoteDbHelper.COLUMN_RECORD_ID + " = ?",
-                new String[]{String.valueOf(noteId)}
-            );
+        if (rowsDeleted > 0) {
+            Toast.makeText(context, "记录已删除", Toast.LENGTH_SHORT).show();
             
-            // 2. 删除相关的时间范围
-            db.delete(
-                NoteDbHelper.TABLE_TIME_RANGES,
-                NoteDbHelper.COLUMN_NOTE_ID + " = ?",
-                new String[]{String.valueOf(noteId)}
-            );
+            // 保存当前滚动位置
+            int firstVisiblePosition = listView.getFirstVisiblePosition();
+            View firstVisibleView = listView.getChildAt(0);
+            int scrollOffset = 0;
+            if (firstVisibleView != null) {
+                scrollOffset = firstVisibleView.getTop();
+            }
             
-            // 3. 删除记录本身
-            int rowsDeleted = db.delete(
-                NoteDbHelper.TABLE_NOTES,
-                "_id = ?",
-                new String[]{String.valueOf(noteId)}
-            );
+            // 重新查询 Cursor（Cursor 是查询时的快照，删除后需要重新查询才能反映最新数据）
+            boolean timeDescOrder = callback.getTimeDescOrder();
+            Cursor newCursor = dbHelper.loadNotes(timeDescOrder);
             
-            // 设置事务成功
-            db.setTransactionSuccessful();
-            
-            // 显示删除成功提示
-            Context context = callback.getContext();
-            if (rowsDeleted > 0 && context != null) {
-                Toast.makeText(context, "记录已删除", Toast.LENGTH_SHORT).show();
-                
-                // 保存当前滚动位置
-                int firstVisiblePosition = listView.getFirstVisiblePosition();
-                View firstVisibleView = listView.getChildAt(0);
-                int scrollOffset = 0;
-                if (firstVisibleView != null) {
-                    scrollOffset = firstVisibleView.getTop();
-                }
-                
-                // 重新查询 Cursor（Cursor 是查询时的快照，删除后需要重新查询才能反映最新数据）
-                boolean timeDescOrder = callback.getTimeDescOrder();
-                String orderBy = NoteDbHelper.COLUMN_IS_PINNED + " DESC, " + 
-                        (timeDescOrder ? 
-                        NoteDbHelper.COLUMN_TIMESTAMP + " DESC" : 
-                        NoteDbHelper.COLUMN_TIMESTAMP + " ASC");
-                
-                Cursor newCursor = db.query(
-                        NoteDbHelper.TABLE_NOTES,
-                        new String[]{"_id", NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP, NoteDbHelper.COLUMN_COST, NoteDbHelper.COLUMN_IS_PINNED},
-                        null, null, null, null,
-                        orderBy
-                );
-                
-                // 更新 wrapper 的 Cursor（会自动清空缓存）
-                if (noteCursorWrapper != null) {
-                    noteCursorWrapper.setCursor(newCursor);
-                    // 刷新适配器，ListView 会自动移除不存在的项，下面的项会自动浮上来
-                    if (adapter != null) {
-                        adapter.notifyDataSetChanged();
-                        // 恢复滚动位置
-                        if (firstVisiblePosition >= 0) {
-                            // 如果删除后列表变短，调整 position
-                            int adjustedPosition = firstVisiblePosition;
-                            if (adjustedPosition >= adapter.getCount()) {
-                                adjustedPosition = Math.max(0, adapter.getCount() - 1);
-                            }
-                            listView.setSelectionFromTop(adjustedPosition, scrollOffset);
+            // 更新 wrapper 的 Cursor（会自动清空缓存）
+            if (noteCursorWrapper != null) {
+                noteCursorWrapper.setCursor(newCursor);
+                // 刷新适配器，ListView 会自动移除不存在的项，下面的项会自动浮上来
+                if (adapter != null) {
+                    adapter.notifyDataSetChanged();
+                    // 恢复滚动位置
+                    if (firstVisiblePosition >= 0) {
+                        // 如果删除后列表变短，调整 position
+                        int adjustedPosition = firstVisiblePosition;
+                        if (adjustedPosition >= adapter.getCount()) {
+                            adjustedPosition = Math.max(0, adapter.getCount() - 1);
                         }
+                        listView.setSelectionFromTop(adjustedPosition, scrollOffset);
                     }
                 }
             }
-        } finally {
-            // 结束事务
-            db.endTransaction();
         }
     }
     
@@ -1392,7 +1403,7 @@ public class NoteListManager {
         
         // 检查当前置顶状态
         boolean isPinned = dbHelper.isNotePinned(noteId);
-        String[] options = {"复制到剪切板", "追加内容", isPinned ? "取消置顶" : "置顶", "删除"};
+        String[] options = {"复制到剪切板", "追加内容", isPinned ? "取消置顶" : "置顶", "合并到...", "删除"};
         
         builder.setItems(options, (dialog, which) -> {
             switch (which) {
@@ -1405,7 +1416,10 @@ public class NoteListManager {
                 case 2: // 置顶/取消置顶
                     togglePinNote(noteId);
                     break;
-                case 3: // 删除
+                case 3: // 合并到...
+                    showMergeToDialog(noteId);
+                    break;
+                case 4: // 删除
                     showDeleteConfirmDialog(noteId);
                     break;
             }
@@ -1418,6 +1432,376 @@ public class NoteListManager {
         Window window = dialog.getWindow();
         if (window != null) {
             window.setGravity(Gravity.CENTER);
+        }
+    }
+    
+    /**
+     * 显示合并到目标Note的对话框
+     * 列出最近一周内的Note供选择
+     * 使用类似Timeline的样式
+     * @param sourceNoteId 源笔记ID
+     */
+    private void showMergeToDialog(long sourceNoteId) {
+        if (callback == null) {
+            return;
+        }
+        
+        Context context = callback.getContext();
+        if (context == null) {
+            return;
+        }
+        
+        // 使用现有的getNearNotes方法获取一周内的Note列表
+        List<Note> nearNotes = getNearNotes(sourceNoteId, TimeRangeFilter.LAST_WEEK);
+        
+        // 过滤掉源Note本身
+        List<Note> targetNotes = new ArrayList<>();
+        for (Note note : nearNotes) {
+            if (note.getId() != sourceNoteId) {
+                targetNotes.add(note);
+            }
+        }
+        
+        if (targetNotes.isEmpty()) {
+            Toast.makeText(context, "一周内没有其他笔记可合并", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        // 创建自定义对话框（使用Timeline样式）
+        AlertDialog.Builder builder = new AlertDialog.Builder(context);
+        View dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_timeline, null);
+        builder.setView(dialogView);
+        
+        // 获取对话框中的视图组件
+        ListView noteListView = dialogView.findViewById(R.id.timelineListView);
+        TextView itemCountText = dialogView.findViewById(R.id.timelineItemCount);
+        android.widget.Button closeButton = dialogView.findViewById(R.id.btnCloseTimeline);
+        
+        // 更新标题和数量
+        itemCountText.setText(targetNotes.size() + " 项");
+        
+        // 创建对话框
+        AlertDialog dialog = builder.create();
+        
+        // 设置关闭按钮点击事件
+        closeButton.setOnClickListener(v -> dialog.dismiss());
+        
+        // 创建适配器并设置点击监听器
+        MergeTargetAdapter mergeAdapter = new MergeTargetAdapter(context, targetNotes);
+        mergeAdapter.setOnItemClickListener((position) -> {
+            Note targetNote = targetNotes.get(position);
+            // 同时获取源Note（从NoteListAdapter中）
+            Note sourceNote = null;
+            if (adapter != null) {
+                for (int i = 0; i < adapter.getCount(); i++) {
+                    Note note = adapter.getItem(i);
+                    if (note != null && note.getId() == sourceNoteId) {
+                        sourceNote = note;
+                        break;
+                    }
+                }
+            }
+            dialog.dismiss();
+            showMergeConfirmDialog(sourceNote, targetNote);
+        });
+        noteListView.setAdapter(mergeAdapter);
+        
+        // 显示对话框
+        dialog.show();
+        
+        // 设置对话框窗口大小
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setLayout(
+                (int) (context.getResources().getDisplayMetrics().widthPixels * 0.9),
+                (int) (context.getResources().getDisplayMetrics().heightPixels * 0.8)
+            );
+        }
+    }
+    
+    /**
+     * 合并目标选择列表项点击监听器接口
+     */
+    private interface MergeTargetItemClickListener {
+        void onItemClick(int position);
+    }
+    
+    /**
+     * 合并目标选择列表适配器
+     * 使用Timeline样式显示Note
+     */
+    private class MergeTargetAdapter extends BaseAdapter {
+        private final Context context;
+        private final List<Note> notes;
+        private MergeTargetItemClickListener onItemClickListener;
+        
+        public void setOnItemClickListener(MergeTargetItemClickListener listener) {
+            this.onItemClickListener = listener;
+        }
+        
+        public MergeTargetAdapter(Context context, List<Note> notes) {
+            this.context = context;
+            this.notes = notes;
+        }
+        
+        @Override
+        public int getCount() {
+            return notes.size();
+        }
+        
+        @Override
+        public Note getItem(int position) {
+            return notes.get(position);
+        }
+        
+        @Override
+        public long getItemId(int position) {
+            return position;
+        }
+        
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            Note note = getItem(position);
+            
+            View view = convertView;
+            if (view == null || view.findViewById(R.id.timelineProjectName) == null) {
+                view = LayoutInflater.from(context).inflate(R.layout.item_timeline, parent, false);
+            }
+            
+            // 获取视图组件
+            TextView projectNameText = view.findViewById(R.id.timelineProjectName);
+            TextView itemTypeText = view.findViewById(R.id.timelineItemType);
+            TextView timeText = view.findViewById(R.id.timelineTime);
+            TextView contentText = view.findViewById(R.id.timelineContent);
+            LinearLayout tagsContainer = view.findViewById(R.id.timelineTagsContainer);
+            
+            // 设置项目名称
+            String projectName = note.getProjectName();
+            if (projectName == null || projectName.isEmpty()) {
+                projectName = callback != null && callback.getProjectManager() != null 
+                    ? callback.getProjectManager().getCurrentProject() 
+                    : "默认项目";
+            }
+            projectNameText.setText(projectName);
+            
+            // 设置类型标签（都是Note）
+            itemTypeText.setText("Note");
+            itemTypeText.setBackgroundColor(Color.parseColor("#2196F3")); // 蓝色
+            
+            // 设置时间
+            timeText.setText(DisplayUtil.formatTimestamp(note.getTimestamp()));
+            
+            // 设置内容预览（最多200字符）
+            String content = note.getContent();
+            if (content == null) {
+                content = "";
+            }
+            if (content.length() > 200) {
+                content = content.substring(0, 200) + "...";
+            }
+            contentText.setText(content);
+            
+            // 加载标签
+            tagsContainer.removeAllViews();
+            if (callback != null && callback.getDbHelper() != null) {
+                NoteDbHelper dbHelper = callback.getDbHelper();
+                Cursor tagsCursor = null;
+                try {
+                    tagsCursor = dbHelper.getTagsForNote(note.getId());
+                    if (tagsCursor != null && tagsCursor.getCount() > 0) {
+                        tagsContainer.setVisibility(View.VISIBLE);
+                        while (tagsCursor.moveToNext()) {
+                            @SuppressLint("Range") String tagName = tagsCursor.getString(
+                                tagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_NAME));
+                            @SuppressLint("Range") String tagColor = tagsCursor.getString(
+                                tagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_COLOR));
+                            
+                            // 创建标签 TextView
+                            TextView tagView = new TextView(context);
+                            tagView.setText(tagName);
+                            tagView.setPadding(
+                                DisplayUtil.dpToPx(context, 6), 
+                                DisplayUtil.dpToPx(context, 2), 
+                                DisplayUtil.dpToPx(context, 6), 
+                                DisplayUtil.dpToPx(context, 2)
+                            );
+                            tagView.setTextColor(Color.WHITE);
+                            tagView.setTextSize(11);
+                            
+                            try {
+                                tagView.setBackgroundColor(Color.parseColor(tagColor));
+                            } catch (Exception e) {
+                                tagView.setBackgroundColor(Color.GRAY);
+                            }
+                            
+                            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.WRAP_CONTENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT);
+                            params.setMargins(0, 0, DisplayUtil.dpToPx(context, 4), 0);
+                            tagView.setLayoutParams(params);
+                            
+                            tagsContainer.addView(tagView);
+                        }
+                    } else {
+                        tagsContainer.setVisibility(View.GONE);
+                    }
+                } catch (Exception e) {
+                    tagsContainer.setVisibility(View.GONE);
+                    e.printStackTrace();
+                } finally {
+                    if (tagsCursor != null) {
+                        tagsCursor.close();
+                    }
+                }
+            } else {
+                tagsContainer.setVisibility(View.GONE);
+            }
+            
+            // 设置点击事件
+            view.setOnClickListener(v -> {
+                if (onItemClickListener != null) {
+                    onItemClickListener.onItemClick(position);
+                }
+            });
+            
+            return view;
+        }
+    }
+    
+    /**
+     * 显示合并确认对话框
+     * @param sourceNote 源笔记对象
+     * @param targetNote 目标笔记对象
+     */
+    private void showMergeConfirmDialog(Note sourceNote, Note targetNote) {
+        if (callback == null || sourceNote == null || targetNote == null) {
+            return;
+        }
+        
+        Context context = callback.getContext();
+        if (context == null) {
+            return;
+        }
+        
+        AlertDialog.Builder builder = new AlertDialog.Builder(context);
+        builder.setTitle("确认合并");
+        builder.setMessage("确定要将当前笔记及其所有追加内容合并到目标笔记吗？此操作不可恢复。");
+        
+        builder.setPositiveButton("确认合并", (dialog, which) -> {
+            performMerge(sourceNote, targetNote);
+        });
+        
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
+    
+    /**
+     * 执行合并操作
+     * 将源Note及其所有评论合并到目标Note中
+     * @param sourceNote 源笔记对象（已从adapter获取，只需加载评论）
+     * @param targetNote 目标笔记对象（已从adapter获取，只需加载评论）
+     */
+    private void performMerge(Note sourceNote, Note targetNote) {
+        if (callback == null || sourceNote == null || targetNote == null) {
+            return;
+        }
+        
+        NoteDbHelper dbHelper = callback.getDbHelper();
+        Context context = callback.getContext();
+        if (dbHelper == null || context == null) {
+            return;
+        }
+        
+        try {
+            // 1. 加载源Note的评论（Note基本信息已从adapter获取）
+            loadCommentsForNote(sourceNote, dbHelper);
+            
+            // 2. 加载目标Note的评论（Note基本信息已从adapter获取）
+            loadCommentsForNote(targetNote, dbHelper);
+            
+            // 3. 使用NoteDbHelper封装的方法执行合并（包含事务管理）
+            boolean success = dbHelper.mergeNotes(sourceNote, targetNote);
+            
+            if (success) {
+                Toast.makeText(context, "合并成功", Toast.LENGTH_SHORT).show();
+                
+                // 保存目标笔记ID，用于后续滚动
+                long targetNoteId = targetNote.getId();
+                
+                // 刷新列表
+                refreshNotes();
+                
+                // 在列表刷新后，滚动到目标笔记位置
+                // 使用post延迟执行，确保列表已经刷新完成
+                if (listView != null) {
+                    listView.post(() -> {
+                        // 再次延迟一点，确保adapter已经更新
+                        listView.postDelayed(() -> {
+                            scrollToNote(targetNoteId);
+                        }, 100);
+                    });
+                }
+            } else {
+                Toast.makeText(context, "合并失败", Toast.LENGTH_SHORT).show();
+            }
+        } catch (Exception e) {
+            Toast.makeText(context, "合并失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+    
+    /**
+     * 为已有的Note对象加载评论数据
+     * @param note Note对象（基本信息已存在，只需加载评论）
+     * @param dbHelper 数据库Helper
+     */
+    private void loadCommentsForNote(Note note, NoteDbHelper dbHelper) {
+        if (note == null || dbHelper == null) {
+            return;
+        }
+        
+        // 确保comments列表已初始化
+        if (note.getComments() == null) {
+            note.setComments(new ArrayList<>());
+        } else {
+            // 清空已有评论（避免重复）
+            note.getComments().clear();
+        }
+        
+        String projectName = note.getProjectName();
+        if (projectName == null && callback != null) {
+            projectName = callback.getProjectManager().getCurrentProject();
+        }
+        
+        // 加载评论（使用现有的getCommentsForNote方法）
+        Cursor commentsCursor = dbHelper.getCommentsForNote(note.getId());
+        if (commentsCursor != null && commentsCursor.getCount() > 0) {
+            while (commentsCursor.moveToNext()) {
+                @SuppressLint("Range") long commentId = commentsCursor.getLong(
+                    commentsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_ID));
+                @SuppressLint("Range") int parentIdIndex = commentsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_PARENT_COMMENT_ID);
+                @SuppressLint("Range") String content = commentsCursor.getString(
+                    commentsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_CONTENT));
+                @SuppressLint("Range") long timestamp = commentsCursor.getLong(
+                    commentsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_TIMESTAMP));
+                @SuppressLint("Range") double cost = commentsCursor.getDouble(
+                    commentsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_COST));
+                
+                Long parentId = null;
+                if (!commentsCursor.isNull(parentIdIndex)) {
+                    parentId = commentsCursor.getLong(parentIdIndex);
+                }
+                
+                Comment comment = new Comment(
+                    commentId,
+                    note.getId(),
+                    parentId,
+                    content,
+                    timestamp,
+                    cost,
+                    projectName
+                );
+                note.addComment(comment);
+            }
+            commentsCursor.close();
         }
     }
     

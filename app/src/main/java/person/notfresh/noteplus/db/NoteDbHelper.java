@@ -662,4 +662,214 @@ public class NoteDbHelper extends SQLiteOpenHelper {
     public Cursor loadNotes() {
         return loadNotes(true);
     }
+    
+    /**
+     * 获取笔记的所有评论ID列表
+     * @param noteId 笔记ID
+     * @return 评论ID集合
+     */
+    public java.util.Set<Long> getCommentIdsForNote(long noteId) {
+        java.util.Set<Long> commentIds = new java.util.HashSet<>();
+        SQLiteDatabase db = this.getReadableDatabase();
+        Cursor cursor = db.query(
+                TABLE_NOTE_COMMENTS,
+                new String[]{COLUMN_COMMENT_ID},
+                COLUMN_COMMENT_NOTE_ID + " = ?",
+                new String[]{String.valueOf(noteId)},
+                null, null, null
+        );
+        
+        if (cursor != null) {
+            while (cursor.moveToNext()) {
+                long commentId = cursor.getLong(cursor.getColumnIndexOrThrow(COLUMN_COMMENT_ID));
+                commentIds.add(commentId);
+            }
+            cursor.close();
+        }
+        
+        return commentIds;
+    }
+    
+    /**
+     * 插入评论（支持指定时间戳，用于合并操作）
+     * @param noteId 笔记ID
+     * @param parentCommentId 父评论ID（可为null）
+     * @param content 评论内容
+     * @param timestamp 时间戳
+     * @param cost 花费金额
+     * @return 新插入的评论ID，失败返回-1
+     */
+    public long insertCommentWithTimestamp(long noteId, Long parentCommentId, String content, long timestamp, double cost) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put(COLUMN_COMMENT_NOTE_ID, noteId);
+        if (parentCommentId != null) {
+            values.put(COLUMN_PARENT_COMMENT_ID, parentCommentId);
+        }
+        values.put(COLUMN_COMMENT_CONTENT, content);
+        values.put(COLUMN_COMMENT_TIMESTAMP, timestamp);
+        values.put(COLUMN_COMMENT_COST, cost);
+        
+        return db.insert(TABLE_NOTE_COMMENTS, null, values);
+    }
+    
+    /**
+     * 在事务中删除笔记及其所有关联数据
+     * 注意：此方法不管理事务，调用者需要确保在事务中调用
+     * @param db 数据库实例（必须在事务中）
+     * @param noteId 笔记ID
+     */
+    public void deleteNoteInTransaction(SQLiteDatabase db, long noteId) {
+        // 1. 删除相关的标签关联
+        db.delete(
+            TABLE_NOTE_TAGS,
+            COLUMN_RECORD_ID + " = ?",
+            new String[]{String.valueOf(noteId)}
+        );
+        
+        // 2. 删除相关的时间范围
+        db.delete(
+            TABLE_TIME_RANGES,
+            COLUMN_NOTE_ID + " = ?",
+            new String[]{String.valueOf(noteId)}
+        );
+        
+        // 3. 删除相关的评论（外键级联删除会自动处理，但显式删除更清晰）
+        db.delete(
+            TABLE_NOTE_COMMENTS,
+            COLUMN_COMMENT_NOTE_ID + " = ?",
+            new String[]{String.valueOf(noteId)}
+        );
+        
+        // 4. 删除记录本身
+        db.delete(
+            TABLE_NOTES,
+            COLUMN_ID + " = ?",
+            new String[]{String.valueOf(noteId)}
+        );
+    }
+    
+    /**
+     * 删除笔记及其所有关联数据（在事务中执行）
+     * 此方法会处理事务管理
+     * 
+     * @param noteId 笔记ID
+     * @return 删除的行数（主要是notes表的删除行数）
+     */
+    public int deleteNote(long noteId) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        
+        // 先检查笔记是否存在
+        Cursor cursor = db.query(
+            TABLE_NOTES,
+            new String[]{COLUMN_ID},
+            COLUMN_ID + " = ?",
+            new String[]{String.valueOf(noteId)},
+            null, null, null
+        );
+        
+        boolean exists = cursor != null && cursor.getCount() > 0;
+        if (cursor != null) {
+            cursor.close();
+        }
+        
+        if (!exists) {
+            return 0;
+        }
+        
+        // 开始事务
+        db.beginTransaction();
+        try {
+            // 使用事务中的删除方法
+            deleteNoteInTransaction(db, noteId);
+            
+            // 提交事务
+            db.setTransactionSuccessful();
+            
+            return 1;
+        } catch (Exception e) {
+            return 0;
+        } finally {
+            // 结束事务
+            db.endTransaction();
+        }
+    }
+    
+    /**
+     * 合并笔记：将源笔记及其所有评论合并到目标笔记中
+     * 此方法会处理事务、ID映射等所有细节
+     * 
+     * @param sourceNote 源笔记对象（需要包含所有评论）
+     * @param targetNote 目标笔记对象（需要包含所有评论）
+     * @return true表示合并成功，false表示失败
+     */
+    public boolean mergeNotes(person.notfresh.noteplus.core.model.Note sourceNote, 
+                              person.notfresh.noteplus.core.model.Note targetNote) {
+        if (sourceNote == null || targetNote == null) {
+            return false;
+        }
+        
+        SQLiteDatabase db = this.getWritableDatabase();
+        
+        // 开始事务
+        db.beginTransaction();
+        try {
+            // 1. 记录目标Note合并前的所有commentId（用于区分哪些是新合并进来的）
+            java.util.Set<Long> originalCommentIds = getCommentIdsForNote(targetNote.getId());
+            
+            // 2. 执行合并（使用Note对象的mergeNoteAsComment方法）
+            targetNote.mergeNoteAsComment(sourceNote);
+            
+            // 3. 保存合并后的新评论到数据库
+            // 只保存那些不在originalCommentIds中的评论（即合并进来的新评论）
+            java.util.Map<Long, Long> commentIdMap = new java.util.HashMap<>();
+            
+            // 先建立原有评论的ID映射（原有评论的ID保持不变）
+            for (person.notfresh.noteplus.core.model.Comment comment : targetNote.getComments()) {
+                if (originalCommentIds.contains(comment.getId())) {
+                    commentIdMap.put(comment.getId(), comment.getId());
+                }
+            }
+            
+            // 然后插入合并进来的新评论，建立ID映射
+            for (person.notfresh.noteplus.core.model.Comment comment : targetNote.getComments()) {
+                // 跳过原有的评论
+                if (originalCommentIds.contains(comment.getId())) {
+                    continue;
+                }
+                
+                // 处理parentCommentId的映射
+                Long mappedParentId = null;
+                if (comment.getParentCommentId() != null) {
+                    mappedParentId = commentIdMap.get(comment.getParentCommentId());
+                }
+                
+                // 插入新评论（使用支持指定时间戳的方法）
+                long newCommentId = insertCommentWithTimestamp(
+                    targetNote.getId(),
+                    mappedParentId,
+                    comment.getContent(),
+                    comment.getTimestamp(),
+                    comment.getCost()
+                );
+                
+                if (newCommentId != -1) {
+                    commentIdMap.put(comment.getId(), newCommentId);
+                }
+            }
+            
+            // 4. 删除源笔记（在事务中执行）
+            deleteNoteInTransaction(db, sourceNote.getId());
+            
+            // 5. 提交事务
+            db.setTransactionSuccessful();
+            return true;
+        } catch (Exception e) {
+            // 事务失败，会自动回滚
+            return false;
+        } finally {
+            // 结束事务
+            db.endTransaction();
+        }
+    }
 } 

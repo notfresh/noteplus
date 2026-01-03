@@ -449,7 +449,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
 - `displayComments()` - 可能被其他适配器使用
 - `toggleCommentsExpanded()` - 可能被其他适配器使用
 - `updateExpandCollapseButton()` - 可能被其他适配器使用
-- `formatTimestamp()`, `dpToPx()`, `formatCommentTimestamp()` - 委托给 `DisplayUtil`，保持向后兼容
+
 
 ### 代码质量
 - 无编译错误
