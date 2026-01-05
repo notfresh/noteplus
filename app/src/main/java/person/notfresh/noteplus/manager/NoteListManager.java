@@ -90,30 +90,54 @@ public class NoteListManager {
             return;
         }
         
-        // 先关闭之前的 Cursor 包装器（如果存在）
-        if (noteCursorWrapper != null) {
-            noteCursorWrapper.close();
-            noteCursorWrapper = null;
-        }
-        
-        NoteDbHelper dbHelper = callback.getDbHelper();
-        if (dbHelper == null) {
-            return;
-        }
-        
-        // 使用NoteDbHelper封装的方法加载笔记
-        boolean timeDescOrder = callback.getTimeDescOrder();
-        Cursor cursor = dbHelper.loadNotes(timeDescOrder);
+        try {
+            // 先关闭之前的 Cursor 包装器（如果存在）
+            if (noteCursorWrapper != null) {
+                noteCursorWrapper.close();
+                noteCursorWrapper = null;
+            }
+            
+            NoteDbHelper dbHelper = callback.getDbHelper();
+            if (dbHelper == null) {
+                android.util.Log.e("NoteListManager", "dbHelper为null，无法加载笔记");
+                return;
+            }
+            
+            // 使用NoteDbHelper封装的方法加载笔记
+            boolean timeDescOrder = callback.getTimeDescOrder();
+            Cursor cursor = null;
+            try {
+                cursor = dbHelper.loadNotes(timeDescOrder);
+            } catch (Exception e) {
+                android.util.Log.e("NoteListManager", "加载笔记Cursor失败", e);
+                throw new RuntimeException("加载笔记失败：" + e.getMessage(), e);
+            }
 
-        // 创建 Cursor 包装器
-        String currentProject = callback.getProjectManager().getCurrentProject();
-        noteCursorWrapper = new NoteCursorWrapper(cursor, currentProject);
-        
-        // 创建适配器
-        adapter = new NoteListAdapter(noteCursorWrapper);
-        
-        // 设置适配器
-        listView.setAdapter(adapter);
+            // 创建 Cursor 包装器
+            String currentProject = callback.getProjectManager().getCurrentProject();
+            noteCursorWrapper = new NoteCursorWrapper(cursor, currentProject);
+            
+            // 创建适配器
+            adapter = new NoteListAdapter(noteCursorWrapper);
+            
+            // 设置适配器
+            listView.setAdapter(adapter);
+        } catch (Exception e) {
+            android.util.Log.e("NoteListManager", "loadNotes异常", e);
+            // 显示错误提示
+            if (callback != null && callback.getContext() != null) {
+                android.widget.Toast.makeText(
+                    callback.getContext(),
+                    "加载笔记失败：" + e.getMessage(),
+                    android.widget.Toast.LENGTH_LONG
+                ).show();
+            }
+            // 确保清理资源
+            if (noteCursorWrapper != null) {
+                noteCursorWrapper.close();
+                noteCursorWrapper = null;
+            }
+        }
         
         // 添加点击监听器
         listView.setOnItemClickListener((parent, view, position, id) -> {

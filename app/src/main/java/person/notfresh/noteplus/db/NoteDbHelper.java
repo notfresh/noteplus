@@ -56,7 +56,8 @@ public class NoteDbHelper extends SQLiteOpenHelper {
             + COLUMN_ID + " integer primary key autoincrement, "
             + COLUMN_CONTENT + " text not null, "
             + COLUMN_TIMESTAMP + " integer not null, "
-            + COLUMN_COST + " real default 0);";
+            + COLUMN_COST + " real default 0, "
+            + COLUMN_IS_PINNED + " integer default 0);";
 
     public NoteDbHelper(Context context, String databaseName) {
         super(context, databaseName, null, DATABASE_VERSION);
@@ -97,10 +98,28 @@ public class NoteDbHelper extends SQLiteOpenHelper {
                 + COLUMN_SETTING_VALUE + " TEXT NOT NULL"
                 + ")";
         
+        String CREATE_NOTE_COMMENTS_TABLE = "CREATE TABLE " + TABLE_NOTE_COMMENTS + "("
+                + COLUMN_COMMENT_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
+                + COLUMN_COMMENT_NOTE_ID + " INTEGER NOT NULL,"
+                + COLUMN_PARENT_COMMENT_ID + " INTEGER DEFAULT NULL,"
+                + COLUMN_COMMENT_CONTENT + " TEXT NOT NULL,"
+                + COLUMN_COMMENT_TIMESTAMP + " INTEGER NOT NULL,"
+                + COLUMN_COMMENT_COST + " REAL DEFAULT 0,"
+                + "FOREIGN KEY (" + COLUMN_COMMENT_NOTE_ID + ") REFERENCES " + TABLE_NOTES + "(" + COLUMN_ID + ") ON DELETE CASCADE,"
+                + "FOREIGN KEY (" + COLUMN_PARENT_COMMENT_ID + ") REFERENCES " + TABLE_NOTE_COMMENTS + "(" + COLUMN_COMMENT_ID + ") ON DELETE CASCADE"
+                + ")";
+        
         database.execSQL(CREATE_TAGS_TABLE);
         database.execSQL(CREATE_TIME_RANGES_TABLE);
         database.execSQL(CREATE_NOTE_TAGS_TABLE);
         database.execSQL(CREATE_SETTINGS_TABLE);
+        database.execSQL(CREATE_NOTE_COMMENTS_TABLE);
+        
+        // 创建索引
+        database.execSQL("CREATE INDEX IF NOT EXISTS idx_note_comments_note_id ON " 
+                + TABLE_NOTE_COMMENTS + "(" + COLUMN_COMMENT_NOTE_ID + ")");
+        database.execSQL("CREATE INDEX IF NOT EXISTS idx_note_comments_timestamp ON " 
+                + TABLE_NOTE_COMMENTS + "(" + COLUMN_COMMENT_TIMESTAMP + ")");
         
         ContentValues defaultSettings = new ContentValues();
         defaultSettings.put(COLUMN_SETTING_KEY, KEY_TIME_RANGE_REQUIRED);
