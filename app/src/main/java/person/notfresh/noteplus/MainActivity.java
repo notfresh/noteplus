@@ -56,6 +56,9 @@ import android.widget.Toast;
 import android.widget.CheckBox;
 import android.widget.SeekBar;
 import android.widget.Switch;
+import android.widget.Spinner;
+import android.widget.ArrayAdapter;
+import android.widget.AdapterView;
 
 import android.Manifest;
 import android.content.ActivityNotFoundException;
@@ -103,6 +106,11 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     // 添加权限常量
     private static final int PERMISSION_REQUEST_WRITE_STORAGE = 1001;
     private static final int REQUEST_NOTIFICATION_PERMISSION = 1002;
+    
+    // 时间线偏好保存常量
+    private static final String PREFS_TIMELINE = "timeline_prefs";
+    private static final String KEY_TIMELINE_RANGE = "time_range";
+    private static final String KEY_TIMELINE_SORT = "sort_descending";
 
     // 输入模式：0=普通, 1=展开, 2=全屏
     private static final int INPUT_MODE_NORMAL = 0;
@@ -2195,6 +2203,8 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         ListView timelineListView = dialogView.findViewById(R.id.timelineListView);
         TextView itemCountText = dialogView.findViewById(R.id.timelineItemCount);
         Button closeButton = dialogView.findViewById(R.id.btnCloseTimeline);
+        Spinner rangeSpinner = dialogView.findViewById(R.id.timelineRangeSpinner);
+        Button sortButton = dialogView.findViewById(R.id.timelineSortButton);
 
         // 创建对话框
         AlertDialog dialog = builder.create();
@@ -2202,50 +2212,67 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         // 设置关闭按钮点击事件
         closeButton.setOnClickListener(v -> dialog.dismiss());
 
-        // 加载时间线数据（在后台线程中执行）
-        ProgressDialog progressDialog = new ProgressDialog(this);
-        progressDialog.setMessage("正在加载时间线...");
-        progressDialog.setCancelable(false);
-        progressDialog.show();
+        // 初始化时间范围选择器
+        String[] rangeOptions = {"最近1周", "最近2周", "最近1个月", "最近3个月"};
+        ArrayAdapter<String> rangeAdapter = new ArrayAdapter<>(this, 
+            android.R.layout.simple_spinner_item, rangeOptions);
+        rangeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        rangeSpinner.setAdapter(rangeAdapter);
         
-        new Thread(() -> {
-            try {
-                // 创建 GlobalTimeline 实例
-                GlobalTimeline globalTimeline = new GlobalTimeline(projectManager);
+        // 读取用户偏好（默认顺序，即false）
+        SharedPreferences prefs = getSharedPreferences(PREFS_TIMELINE, MODE_PRIVATE);
+        int savedRangePosition = prefs.getInt(KEY_TIMELINE_RANGE, 0); // 默认最近1周
+        boolean savedSortDescending = prefs.getBoolean(KEY_TIMELINE_SORT, false); // 默认顺序
+        
+        // 应用用户偏好
+        rangeSpinner.setSelection(savedRangePosition);
+        updateSortButtonText(sortButton, savedSortDescending);
+        
+        // 获取初始时间范围和排序方向
+        TimeRangeFilter initialRange = getTimeRangeFromPosition(savedRangePosition);
+
+        // 监听时间范围变化
+        rangeSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                TimeRangeFilter selectedRange = getTimeRangeFromPosition(position);
+                // 从按钮文字判断当前排序方向
+                boolean descending = sortButton.getText().toString().equals("逆序");
                 
-                // 加载最近一周的数据，按时间逆序（最新的在前）
-                List<Comment> timelineItems = globalTimeline.loadGlobalTimelineLastWeek(true);
+                // 保存偏好
+                saveTimelinePreferences(position, descending);
                 
-                // 返回UI线程更新界面
-                runOnUiThread(() -> {
-                    progressDialog.dismiss();
-                    
-                    // 更新项目数量
-                    itemCountText.setText(timelineItems.size() + " 项");
-                    
-                    // 创建适配器
-                    TimelineAdapter adapter = new TimelineAdapter(timelineItems);
-                    timelineListView.setAdapter(adapter);
-                    
-                    // 设置点击事件
-                    timelineListView.setOnItemClickListener((parent, view, position, id) -> {
-                        Comment item = timelineItems.get(position);
-                        // 跳过日期分割线项
-                        if (item.getItemType() == person.notfresh.noteplus.core.model.TimelineItemType.DATE_DIVIDER) {
-                            return;
-                        }
-                        // TODO: 可以在这里添加点击跳转到对应 Note 详情的逻辑
-                        // 需要切换到对应项目并打开对应的 Note
-                    });
-                });
-            } catch (Exception e) {
-                e.printStackTrace();
-                runOnUiThread(() -> {
-                    progressDialog.dismiss();
-                    Toast.makeText(this, "加载时间线失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-                });
+                // 重新加载数据
+                loadTimelineData(timelineListView, itemCountText, selectedRange, descending);
             }
-        }).start();
+            
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+                // 不做处理
+            }
+        });
+        
+        // 监听排序按钮点击
+        sortButton.setOnClickListener(v -> {
+            // 切换排序方向
+            boolean currentDescending = sortButton.getText().toString().equals("逆序");
+            boolean newDescending = !currentDescending;
+            
+            // 更新按钮文字
+            updateSortButtonText(sortButton, newDescending);
+            
+            int selectedPosition = rangeSpinner.getSelectedItemPosition();
+            TimeRangeFilter selectedRange = getTimeRangeFromPosition(selectedPosition);
+            
+            // 保存偏好
+            saveTimelinePreferences(selectedPosition, newDescending);
+            
+            // 重新加载数据
+            loadTimelineData(timelineListView, itemCountText, selectedRange, newDescending);
+        });
+
+        // 初始加载数据（使用用户偏好）
+        loadTimelineData(timelineListView, itemCountText, initialRange, savedSortDescending);
         
         // 显示对话框
         dialog.show();
@@ -2257,6 +2284,138 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                 (int) (getResources().getDisplayMetrics().heightPixels * 0.8)
             );
         }
+    }
+    
+    /**
+     * 更新排序按钮的文字
+     * 
+     * @param button 排序按钮
+     * @param descending 是否逆序（true=逆序，false=顺序）
+     */
+    private void updateSortButtonText(Button button, boolean descending) {
+        button.setText(descending ? "逆序" : "顺序");
+    }
+    
+    /**
+     * 保存时间线用户偏好
+     * 
+     * @param rangePosition 时间范围位置
+     * @param descending 是否逆序
+     */
+    private void saveTimelinePreferences(int rangePosition, boolean descending) {
+        SharedPreferences prefs = getSharedPreferences(PREFS_TIMELINE, MODE_PRIVATE);
+        prefs.edit()
+            .putInt(KEY_TIMELINE_RANGE, rangePosition)
+            .putBoolean(KEY_TIMELINE_SORT, descending)
+            .apply();
+    }
+    
+    /**
+     * 根据Spinner位置获取对应的时间范围枚举
+     * 
+     * @param position Spinner的选中位置
+     * @return 对应的时间范围枚举
+     */
+    private TimeRangeFilter getTimeRangeFromPosition(int position) {
+        switch (position) {
+            case 0:
+                return TimeRangeFilter.LAST_WEEK;      // 最近1周
+            case 1:
+                return TimeRangeFilter.LAST_TWO_WEEKS;  // 最近2周
+            case 2:
+                return TimeRangeFilter.LAST_MONTH;      // 最近1个月
+            case 3:
+                return TimeRangeFilter.LAST_THREE_MONTHS; // 最近3个月
+            default:
+                return TimeRangeFilter.LAST_WEEK;
+        }
+    }
+    
+    /**
+     * 加载时间线数据
+     * 
+     * @param listView 列表视图
+     * @param countText 项目数量文本视图
+     * @param timeRange 时间范围
+     * @param descending 是否逆序（true表示最新的在前）
+     */
+    private void loadTimelineData(ListView listView, TextView countText, 
+                                  TimeRangeFilter timeRange, boolean descending) {
+        // 加载时间线数据（在后台线程中执行）
+        ProgressDialog progressDialog = new ProgressDialog(this);
+        progressDialog.setMessage("正在加载时间线...");
+        progressDialog.setCancelable(false);
+        progressDialog.show();
+        
+        // 记录开始时间，确保至少显示0.5秒
+        long startTime = System.currentTimeMillis();
+        final long MIN_DISPLAY_TIME = 500; // 最少显示时间（毫秒）
+        
+        new Thread(() -> {
+            try {
+                // 创建 GlobalTimeline 实例
+                GlobalTimeline globalTimeline = new GlobalTimeline(projectManager);
+                
+                // 加载指定时间范围的数据
+                List<Comment> timelineItems = globalTimeline.loadGlobalTimeline(timeRange, descending);
+                
+                // 计算已用时间
+                long elapsedTime = System.currentTimeMillis() - startTime;
+                long remainingTime = Math.max(0, MIN_DISPLAY_TIME - elapsedTime);
+                
+                // 返回UI线程更新界面
+                runOnUiThread(() -> {
+                    // 更新UI的Runnable
+                    Runnable updateUIRunnable = () -> {
+                        progressDialog.dismiss();
+                        
+                        // 更新项目数量
+                        countText.setText(timelineItems.size() + " 项");
+                        
+                        // 创建适配器
+                        TimelineAdapter adapter = new TimelineAdapter(timelineItems);
+                        listView.setAdapter(adapter);
+                        
+                        // 设置点击事件
+                        listView.setOnItemClickListener((parent, view, position, id) -> {
+                            Comment item = timelineItems.get(position);
+                            // 跳过日期分割线项
+                            if (item.getItemType() == person.notfresh.noteplus.core.model.TimelineItemType.DATE_DIVIDER) {
+                                return;
+                            }
+                            // TODO: 可以在这里添加点击跳转到对应 Note 详情的逻辑
+                            // 需要切换到对应项目并打开对应的 Note
+                        });
+                    };
+                    
+                    // 如果还没到最少显示时间，延迟关闭
+                    if (remainingTime > 0) {
+                        new Handler(Looper.getMainLooper()).postDelayed(updateUIRunnable, remainingTime);
+                    } else {
+                        // 已经超过最少显示时间，立即关闭
+                        updateUIRunnable.run();
+                    }
+                });
+            } catch (Exception e) {
+                e.printStackTrace();
+                // 计算已用时间
+                long elapsedTime = System.currentTimeMillis() - startTime;
+                long remainingTime = Math.max(0, MIN_DISPLAY_TIME - elapsedTime);
+                
+                runOnUiThread(() -> {
+                    Runnable errorRunnable = () -> {
+                        progressDialog.dismiss();
+                        Toast.makeText(this, "加载时间线失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    };
+                    
+                    if (remainingTime > 0) {
+                        new Handler(Looper.getMainLooper()).postDelayed(errorRunnable, remainingTime);
+                    } else {
+                        errorRunnable.run();
+                    }
+                });
+            }
+        }).start();
     }
     
     /**
@@ -2355,6 +2514,15 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             if (content.length() > 200) {
                 content = content.substring(0, 200) + "...";
             }
+            
+            // 如果是置顶的Note，在内容前添加置顶标识
+            if (isNote && comment.isPinned()) {
+                // 检查是否已经包含置顶标识，避免重复添加
+                if (!content.startsWith("📌 ")) {
+                    content = "📌 " + content;
+                }
+            }
+            
             contentText.setText(content);
             
             // 加载标签（只有 Note 才显示标签）
@@ -2772,6 +2940,11 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     private void toggleMultiSelectMode() {
         isMultiSelectMode = !isMultiSelectMode;
         
+        // 如果退出多选模式，清空选中项
+        if (!isMultiSelectMode) {
+            selectedNoteIds.clear();
+        }
+        
         if (noteListManager != null) {
             noteListManager.setMultiSelectMode(isMultiSelectMode);
         }
@@ -3126,7 +3299,14 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     @Override
     public void onMultiSelectChanged(Set<Long> selectedIds) {
         this.selectedNoteIds = selectedIds;
-        this.isMultiSelectMode = selectedIds != null && !selectedIds.isEmpty();
+        // 只在多选模式下才根据选中项更新状态
+        // 如果已经退出多选模式，不要自动重新进入
+        if (isMultiSelectMode) {
+            // 多选模式下，如果选中项为空，保持多选模式状态（用户可能还没选择）
+            // 状态由 toggleMultiSelectMode() 控制，这里只更新选中项
+        }
+        // 更新菜单显示
+        updateMultiSelectMenu();
     }
     
     @Override

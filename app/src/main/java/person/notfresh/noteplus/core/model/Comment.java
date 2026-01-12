@@ -13,9 +13,11 @@ public class Comment {
     private double cost;
     private String projectName;  // 所属项目名称
     private TimelineItemType itemType;  // 时间线项类型：NOTE（Note转换来的）或 COMMENT（真正的Comment）
+    private boolean isPinned;  // 是否置顶（仅对NOTE类型的Comment有效）
     
     public Comment() {
         this.itemType = TimelineItemType.COMMENT;  // 默认为 COMMENT
+        this.isPinned = false;  // 默认为未置顶
     }
     
     public Comment(long id, long noteId, Long parentCommentId, String content, long timestamp, double cost) {
@@ -48,6 +50,19 @@ public class Comment {
         this.cost = cost;
         this.projectName = projectName;
         this.itemType = itemType;
+        this.isPinned = false;  // 默认为未置顶
+    }
+    
+    public Comment(long id, long noteId, Long parentCommentId, String content, long timestamp, double cost, String projectName, TimelineItemType itemType, boolean isPinned) {
+        this.id = id;
+        this.noteId = noteId;
+        this.parentCommentId = parentCommentId;
+        this.content = content;
+        this.timestamp = timestamp;
+        this.cost = cost;
+        this.projectName = projectName;
+        this.itemType = itemType;
+        this.isPinned = isPinned;
     }
     
     // Getters and Setters
@@ -113,6 +128,14 @@ public class Comment {
     
     public void setItemType(TimelineItemType itemType) {
         this.itemType = itemType;
+    }
+    
+    public boolean isPinned() {
+        return isPinned;
+    }
+    
+    public void setPinned(boolean pinned) {
+        isPinned = pinned;
     }
     
     /**

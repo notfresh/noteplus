@@ -109,9 +109,28 @@ public class GlobalTimeline {
         
         // 对所有项目的时间线数据进行统一排序
         // 注意：虽然每个项目内部已经排序，但跨项目需要重新排序
+        // 排序规则：置顶的Note排在最前面，然后按时间排序；Comment不参与置顶排序
         Collections.sort(globalTimeline, new Comparator<Comment>() {
             @Override
             public int compare(Comment a, Comment b) {
+                // 判断是否为Note类型
+                boolean aIsNote = a.getItemType() == TimelineItemType.NOTE;
+                boolean bIsNote = b.getItemType() == TimelineItemType.NOTE;
+                
+                // 如果都是Note，比较置顶状态
+                if (aIsNote && bIsNote) {
+                    // 置顶的Note排在前面
+                    if (a.isPinned() != b.isPinned()) {
+                        return a.isPinned() ? -1 : 1;  // a置顶则a在前，b置顶则b在前
+                    }
+                } else if (aIsNote && a.isPinned()) {
+                    // a是置顶的Note，b是Comment或其他，a排在前面
+                    return -1;
+                } else if (bIsNote && b.isPinned()) {
+                    // b是置顶的Note，a是Comment或其他，b排在前面
+                    return 1;
+                }
+                // 其他情况按时间排序
                 if (descending) {
                     // 逆序：b.timestamp - a.timestamp（最新的在前）
                     return Long.compare(b.getTimestamp(), a.getTimestamp());

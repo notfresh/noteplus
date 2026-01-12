@@ -22,6 +22,7 @@ public class modelUtil {
         // - timestamp: note.getTimestamp()
         // - cost: note.getCost()
         // - itemType: TimelineItemType.NOTE（表示这是 Note 转换来的）
+        // - isPinned: note.isPinned()（置顶状态）
         String noteProjectName = note.getProjectName() != null ? note.getProjectName() : defaultProjectName;
         Comment comment = new Comment(
             note.getId(),           // commentId = noteId
@@ -31,7 +32,8 @@ public class modelUtil {
             note.getTimestamp(),    // timestamp
             note.getCost(),         // cost
             noteProjectName,        // projectName
-            TimelineItemType.NOTE   // itemType = NOTE（表示这是 Note 转换来的）
+            TimelineItemType.NOTE,  // itemType = NOTE（表示这是 Note 转换来的）
+            note.isPinned()         // isPinned（置顶状态）
         );
         return comment;
     }

@@ -114,7 +114,8 @@ public class NoteDataLoader {
                     "_id",
                     NoteDbHelper.COLUMN_CONTENT,
                     NoteDbHelper.COLUMN_TIMESTAMP,
-                    NoteDbHelper.COLUMN_COST
+                    NoteDbHelper.COLUMN_COST,
+                    NoteDbHelper.COLUMN_IS_PINNED
                 },
                 noteSelection,
                 noteSelectionArgs,
@@ -128,14 +129,16 @@ public class NoteDataLoader {
                 int contentIndex = notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_CONTENT);
                 int timestampIndex = notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TIMESTAMP);
                 int costIndex = notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COST);
+                int pinnedIndex = notesCursor.getColumnIndex(NoteDbHelper.COLUMN_IS_PINNED);
                 
                 while (notesCursor.moveToNext()) {
                     long noteId = notesCursor.getLong(idIndex);
                     String content = notesCursor.getString(contentIndex);
                     long timestamp = notesCursor.getLong(timestampIndex);
                     double cost = notesCursor.getDouble(costIndex);
+                    boolean isPinned = pinnedIndex >= 0 && notesCursor.getInt(pinnedIndex) == 1;
                     
-                    // 将 Note 转换为 Comment，设置类型为 NOTE
+                    // 将 Note 转换为 Comment，设置类型为 NOTE，并传递置顶状态
                     Comment noteAsComment = new Comment(
                             noteId,           // commentId = noteId
                             noteId,           // noteId = noteId（指向自己）
@@ -144,7 +147,8 @@ public class NoteDataLoader {
                             timestamp,        // timestamp
                             cost,             // cost
                             projectName,      // projectName
-                            TimelineItemType.NOTE  // itemType = NOTE（表示这是 Note 转换来的）
+                            TimelineItemType.NOTE,  // itemType = NOTE（表示这是 Note 转换来的）
+                            isPinned         // isPinned（置顶状态）
                     );
                     timeline.add(noteAsComment);
                 }

@@ -33,6 +33,33 @@
             android:layout_marginEnd="8dp" />
     </LinearLayout>
 
+    <!-- 控制栏 - 时间范围和排序选择 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:background="#F5F5F5"
+        android:gravity="center_vertical">
+
+        <!-- 时间范围选择（左侧） -->
+        <Spinner
+            android:id="@+id/timelineRangeSpinner"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minWidth="120dp" />
+
+        <!-- 排序方向选择（右侧） -->
+        <Button
+            android:id="@+id/timelineSortButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="顺序"
+            android:layout_marginStart="16dp"
+            android:minWidth="80dp" />
+    </LinearLayout>
+
     <!-- 时间线列表 -->
     <ListView
         android:id="@+id/timelineListView"
