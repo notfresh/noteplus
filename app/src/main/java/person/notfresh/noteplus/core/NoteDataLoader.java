@@ -108,20 +108,43 @@ public class NoteDataLoader {
         String noteSelection = NoteDbHelper.COLUMN_TIMESTAMP + " >= ?";
         String[] noteSelectionArgs = new String[]{String.valueOf(startTime)};
         
-        Cursor notesCursor = db.query(
-                NoteDbHelper.TABLE_NOTES,
-                new String[]{
-                    "_id",
-                    NoteDbHelper.COLUMN_CONTENT,
-                    NoteDbHelper.COLUMN_TIMESTAMP,
-                    NoteDbHelper.COLUMN_COST,
-                    NoteDbHelper.COLUMN_IS_PINNED
-                },
-                noteSelection,
-                noteSelectionArgs,
-                null, null,
-                null  // 不在这里排序，后面统一排序
-        );
+        Cursor notesCursor = null;
+        try {
+            // 先尝试查询包含 is_pinned 列的完整查询
+            notesCursor = db.query(
+                    NoteDbHelper.TABLE_NOTES,
+                    new String[]{
+                        "_id",
+                        NoteDbHelper.COLUMN_CONTENT,
+                        NoteDbHelper.COLUMN_TIMESTAMP,
+                        NoteDbHelper.COLUMN_COST,
+                        NoteDbHelper.COLUMN_IS_PINNED
+                    },
+                    noteSelection,
+                    noteSelectionArgs,
+                    null, null,
+                    null  // 不在这里排序，后面统一排序
+            );
+        } catch (android.database.sqlite.SQLiteException e) {
+            // 如果查询失败（可能是 is_pinned 列不存在），使用不包含 is_pinned 的查询
+            android.util.Log.w("Timeline", "Timeline: 查询包含 is_pinned 失败，尝试不包含 is_pinned 的查询: " + e.getMessage());
+            if (notesCursor != null) {
+                notesCursor.close();
+            }
+            notesCursor = db.query(
+                    NoteDbHelper.TABLE_NOTES,
+                    new String[]{
+                        "_id",
+                        NoteDbHelper.COLUMN_CONTENT,
+                        NoteDbHelper.COLUMN_TIMESTAMP,
+                        NoteDbHelper.COLUMN_COST
+                    },
+                    noteSelection,
+                    noteSelectionArgs,
+                    null, null,
+                    null  // 不在这里排序，后面统一排序
+            );
+        }
         
         if (notesCursor != null) {
             try {
@@ -136,6 +159,7 @@ public class NoteDataLoader {
                     String content = notesCursor.getString(contentIndex);
                     long timestamp = notesCursor.getLong(timestampIndex);
                     double cost = notesCursor.getDouble(costIndex);
+                    // 如果 pinnedIndex < 0，说明列不存在，使用默认值 false
                     boolean isPinned = pinnedIndex >= 0 && notesCursor.getInt(pinnedIndex) == 1;
                     
                     // 将 Note 转换为 Comment，设置类型为 NOTE，并传递置顶状态
@@ -148,7 +172,7 @@ public class NoteDataLoader {
                             cost,             // cost
                             projectName,      // projectName
                             TimelineItemType.NOTE,  // itemType = NOTE（表示这是 Note 转换来的）
-                            isPinned         // isPinned（置顶状态）
+                            isPinned         // isPinned（置顶状态，如果列不存在则为 false）
                     );
                     timeline.add(noteAsComment);
                 }
@@ -161,21 +185,29 @@ public class NoteDataLoader {
         String commentSelection = NoteDbHelper.COLUMN_COMMENT_TIMESTAMP + " >= ?";
         String[] commentSelectionArgs = new String[]{String.valueOf(startTime)};
         
-        Cursor commentsCursor = db.query(
-                NoteDbHelper.TABLE_NOTE_COMMENTS,
-                new String[]{
-                    NoteDbHelper.COLUMN_COMMENT_ID,
-                    NoteDbHelper.COLUMN_COMMENT_NOTE_ID,
-                    NoteDbHelper.COLUMN_PARENT_COMMENT_ID,
-                    NoteDbHelper.COLUMN_COMMENT_CONTENT,
-                    NoteDbHelper.COLUMN_COMMENT_TIMESTAMP,
-                    NoteDbHelper.COLUMN_COMMENT_COST
-                },
-                commentSelection,
-                commentSelectionArgs,
-                null, null,
-                null  // 不在这里排序，后面统一排序
-        );
+        Cursor commentsCursor = null;
+        try {
+            // 尝试查询 Comment 表
+            commentsCursor = db.query(
+                    NoteDbHelper.TABLE_NOTE_COMMENTS,
+                    new String[]{
+                        NoteDbHelper.COLUMN_COMMENT_ID,
+                        NoteDbHelper.COLUMN_COMMENT_NOTE_ID,
+                        NoteDbHelper.COLUMN_PARENT_COMMENT_ID,
+                        NoteDbHelper.COLUMN_COMMENT_CONTENT,
+                        NoteDbHelper.COLUMN_COMMENT_TIMESTAMP,
+                        NoteDbHelper.COLUMN_COMMENT_COST
+                    },
+                    commentSelection,
+                    commentSelectionArgs,
+                    null, null,
+                    null  // 不在这里排序，后面统一排序
+            );
+        } catch (android.database.sqlite.SQLiteException e) {
+            // 如果查询失败（可能是 note_comments 表不存在），记录警告并跳过
+            android.util.Log.w("Timeline", "Timeline: 查询 Comment 表失败，可能表不存在: " + e.getMessage());
+            // commentsCursor 保持为 null，后续不会处理
+        }
         
         if (commentsCursor != null) {
             try {

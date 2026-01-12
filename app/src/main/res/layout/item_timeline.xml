@@ -5,8 +5,8 @@
     android:orientation="vertical"
     android:padding="12dp"
     android:background="?android:attr/selectableItemBackground"
-    android:clickable="true"
-    android:focusable="true">
+    android:clickable="false"
+    android:focusable="false">
 
     <!-- 顶部信息栏：项目名称和类型 -->
     <LinearLayout

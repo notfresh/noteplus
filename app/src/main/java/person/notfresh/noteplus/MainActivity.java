@@ -127,6 +127,13 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     private MenuItem multiSelectMenuItem = null;
 
     private boolean hasTimeRange = false;
+    
+    // 时间轴双击检测相关变量
+    private Handler timelineClickHandler = new Handler(Looper.getMainLooper());
+    private Runnable timelineClickRunnable;
+    private long lastTimelineClickTime = 0;
+    private int lastTimelineClickPosition = -1;
+    private static final long DOUBLE_CLICK_DELAY = 500; // 双击间隔时间（毫秒），增加到500ms以提高检测成功率
 
     private EditText momentEditText;
     private Button saveButton;
@@ -2311,6 +2318,456 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     }
     
     /**
+     * 处理时间轴项的双击事件
+     * 
+     * @param item 被双击的时间轴项（Comment对象）
+     */
+    private void handleTimelineDoubleClick(Comment item) {
+        // 跳过日期分割线项
+        if (item.getItemType() == person.notfresh.noteplus.core.model.TimelineItemType.DATE_DIVIDER) {
+            return;
+        }
+        
+        // 添加调试日志
+        android.util.Log.d("Timeline", "双击检测触发: NoteId=" + item.getNoteId() + ", Project=" + item.getProjectName());
+        
+        // 获取目标项目名称和Note ID
+        String targetProjectName = item.getProjectName();
+        long noteId = item.getNoteId();
+        
+        // 验证数据有效性
+        if (targetProjectName == null || targetProjectName.isEmpty()) {
+            Toast.makeText(this, "Timeline: 项目名称无效", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        if (noteId <= 0) {
+            Toast.makeText(this, "Timeline: Note ID无效", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        // 获取当前项目
+        String currentProjectName = projectManager.getCurrentProject();
+        
+        // 比较项目名称，决定是否需要切换项目
+        if (targetProjectName != null && targetProjectName.equals(currentProjectName)) {
+            // 同项目，直接加载详情
+            android.util.Log.d("Timeline", "同项目，直接加载详情");
+            loadNoteDetail(noteId, targetProjectName);
+        } else {
+            // 不同项目，需要切换项目后再加载详情
+            android.util.Log.d("Timeline", "不同项目，切换项目后加载详情");
+            switchProjectAndShowDetail(targetProjectName, noteId);
+        }
+    }
+    
+    /**
+     * 切换项目并显示Note详情
+     * 
+     * @param projectName 目标项目名称
+     * @param noteId Note ID
+     */
+    private void switchProjectAndShowDetail(String projectName, long noteId) {
+        // 使用后台线程处理项目切换，不显示进度提示
+        new Thread(() -> {
+            try {
+                // 切换项目
+                boolean switchSuccess = projectManager.switchToProject(projectName);
+                if (!switchSuccess) {
+                    throw new Exception("Timeline: 切换项目失败: " + projectName);
+                }
+                
+                // 更新数据库Helper
+                if (dbHelper != null) {
+                    dbHelper.close();
+                }
+                dbHelper = projectManager.getCurrentDbHelper();
+                
+                // 更新导入导出管理器
+                importExportManager = new person.notfresh.noteplus.manager.ImportExportManager(
+                    MainActivity.this, dbHelper, projectManager);
+                
+                // 在UI线程中更新UI并继续加载详情
+                runOnUiThread(() -> {
+                    // 更新标题
+                    updateTitle();
+                    
+                    // 直接加载Note详情，不显示进度提示
+                    loadNoteDetail(noteId, projectName);
+                });
+            } catch (Exception e) {
+                // 使用Log记录完整异常信息，包括堆栈，便于通过"Timeline"标签过滤
+                android.util.Log.e("Timeline", "Timeline: 切换项目失败", e);
+                
+                runOnUiThread(() -> {
+                    Toast.makeText(this, "Timeline: 切换项目失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
+            }
+        }).start();
+    }
+    
+    /**
+     * 根据ID加载Note基本信息
+     * 
+     * @param dbHelper 数据库Helper
+     * @param noteId Note ID
+     * @return Note对象，如果不存在返回null
+     */
+    private Note loadNoteById(NoteDbHelper dbHelper, long noteId) {
+        if (dbHelper == null) {
+            return null;
+        }
+        
+        SQLiteDatabase db = dbHelper.getReadableDatabase();
+        Cursor cursor = null;
+        try {
+            cursor = db.query(
+                NoteDbHelper.TABLE_NOTES,
+                new String[]{
+                    "_id",
+                    NoteDbHelper.COLUMN_CONTENT,
+                    NoteDbHelper.COLUMN_TIMESTAMP,
+                    NoteDbHelper.COLUMN_COST,
+                    NoteDbHelper.COLUMN_IS_PINNED
+                },
+                "_id = ?",
+                new String[]{String.valueOf(noteId)},
+                null, null, null
+            );
+            
+            if (cursor != null && cursor.moveToFirst()) {
+                int idIndex = cursor.getColumnIndexOrThrow("_id");
+                int contentIndex = cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_CONTENT);
+                int timestampIndex = cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TIMESTAMP);
+                int costIndex = cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COST);
+                int pinnedIndex = cursor.getColumnIndex(NoteDbHelper.COLUMN_IS_PINNED);
+                
+                long id = cursor.getLong(idIndex);
+                String content = cursor.getString(contentIndex);
+                long timestamp = cursor.getLong(timestampIndex);
+                double cost = cursor.getDouble(costIndex);
+                boolean isPinned = pinnedIndex >= 0 && cursor.getInt(pinnedIndex) == 1;
+                
+                String projectName = projectManager.getCurrentProject();
+                return new Note(id, content, timestamp, cost, isPinned, projectName);
+            }
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
+        return null;
+    }
+    
+    /**
+     * 加载Note的所有Comment
+     * 
+     * @param dbHelper 数据库Helper
+     * @param noteId Note ID
+     * @param projectName 项目名称
+     * @return Comment列表，按时间正序排序
+     */
+    private List<Comment> loadCommentsForNote(NoteDbHelper dbHelper, long noteId, String projectName) {
+        List<Comment> comments = new ArrayList<>();
+        if (dbHelper == null) {
+            return comments;
+        }
+        
+        Cursor cursor = null;
+        try {
+            cursor = dbHelper.getCommentsForNote(noteId);
+            if (cursor != null) {
+                // 注意：getCommentsForNote 返回的 Cursor 不包含 COLUMN_COMMENT_NOTE_ID 列
+                // 因为我们已经在查询条件中使用了 noteId，所以不需要从 Cursor 中读取
+                int commentIdIndex = cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_ID);
+                int parentCommentIdIndex = cursor.getColumnIndex(NoteDbHelper.COLUMN_PARENT_COMMENT_ID);
+                int contentIndex = cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_CONTENT);
+                int timestampIndex = cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_TIMESTAMP);
+                int costIndex = cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_COST);
+                
+                while (cursor.moveToNext()) {
+                    long commentId = cursor.getLong(commentIdIndex);
+                    Long parentCommentId = null;
+                    if (parentCommentIdIndex >= 0 && !cursor.isNull(parentCommentIdIndex)) {
+                        parentCommentId = cursor.getLong(parentCommentIdIndex);
+                    }
+                    String content = cursor.getString(contentIndex);
+                    long timestamp = cursor.getLong(timestampIndex);
+                    double cost = cursor.getDouble(costIndex);
+                    
+                    // 使用传入的 noteId 参数，而不是从 Cursor 中读取
+                    Comment comment = new Comment(
+                        commentId,
+                        noteId,  // 使用方法参数中的 noteId
+                        parentCommentId,
+                        content,
+                        timestamp,
+                        cost,
+                        projectName,
+                        person.notfresh.noteplus.core.model.TimelineItemType.COMMENT
+                    );
+                    comments.add(comment);
+                }
+            }
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
+        return comments;
+    }
+    
+    /**
+     * 加载Note的标签
+     * 
+     * @param dbHelper 数据库Helper
+     * @param noteId Note ID
+     * @return 标签Cursor，如果不存在返回null
+     */
+    private Cursor loadTagsForNote(NoteDbHelper dbHelper, long noteId) {
+        if (dbHelper == null) {
+            return null;
+        }
+        return dbHelper.getTagsForNote(noteId);
+    }
+    
+    /**
+     * 加载Note详情（包括Note基本信息、所有Comment和标签）
+     * 
+     * @param noteId Note ID
+     * @param projectName 项目名称
+     */
+    private void loadNoteDetail(long noteId, String projectName) {
+        // 直接在后台线程加载，不显示进度提示
+        new Thread(() -> {
+            try {
+                // 获取数据库Helper
+                NoteDbHelper dbHelper = projectManager.getDbHelperForProject(projectName);
+                if (dbHelper == null) {
+                    throw new Exception("Timeline: 项目不存在: " + projectName);
+                }
+                
+                // 加载Note基本信息
+                Note note = loadNoteById(dbHelper, noteId);
+                if (note == null) {
+                    throw new Exception("Timeline: Note不存在: " + noteId);
+                }
+                
+                // 加载Comment列表
+                List<Comment> comments = loadCommentsForNote(dbHelper, noteId, projectName);
+                
+                // 加载标签
+                Cursor tagsCursor = loadTagsForNote(dbHelper, noteId);
+                
+                // 在UI线程中显示对话框
+                final Note finalNote = note;
+                final List<Comment> finalComments = comments;
+                final Cursor finalTagsCursor = tagsCursor;
+                
+                runOnUiThread(() -> {
+                    // 直接显示详情对话框，不延迟
+                    showNoteDetailDialog(finalNote, finalComments, finalTagsCursor);
+                });
+            } catch (Exception e) {
+                // 使用Log记录完整异常信息，包括堆栈，便于通过"Timeline"标签过滤
+                android.util.Log.e("Timeline", "Timeline: 加载Note详情失败", e);
+                
+                runOnUiThread(() -> {
+                    Toast.makeText(this, "Timeline: 加载失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
+            }
+        }).start();
+    }
+    
+    /**
+     * 显示Note详情对话框
+     * 
+     * @param note Note对象
+     * @param comments Comment列表
+     * @param tagsCursor 标签Cursor
+     */
+    private void showNoteDetailDialog(Note note, List<Comment> comments, Cursor tagsCursor) {
+        // 创建对话框
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        View dialogView = getLayoutInflater().inflate(R.layout.dialog_note_detail, null);
+        builder.setView(dialogView);
+        
+        // 获取UI组件
+        TextView detailTitle = dialogView.findViewById(R.id.detailTitle);
+        Button btnCloseDetail = dialogView.findViewById(R.id.btnCloseDetail);
+        Button btnCloseDetail2 = dialogView.findViewById(R.id.btnCloseDetail2);
+        TextView detailProjectName = dialogView.findViewById(R.id.detailProjectName);
+        TextView detailNoteContent = dialogView.findViewById(R.id.detailNoteContent);
+        TextView detailNoteTime = dialogView.findViewById(R.id.detailNoteTime);
+        TextView detailNoteCost = dialogView.findViewById(R.id.detailNoteCost);
+        LinearLayout detailTagsContainer = dialogView.findViewById(R.id.detailTagsContainer);
+        ListView detailCommentList = dialogView.findViewById(R.id.detailCommentList);
+        Button btnAddComment = dialogView.findViewById(R.id.btnAddComment);
+        
+        // 创建对话框
+        AlertDialog dialog = builder.create();
+        
+        // 设置标题
+        detailTitle.setText("Note详情");
+        
+        // 设置项目名称
+        detailProjectName.setText(note.getProjectName());
+        
+        // 设置Note内容（如果有置顶标识，保留）
+        String content = note.getContent();
+        if (note.isPinned()) {
+            content = "📌 " + content;
+        }
+        detailNoteContent.setText(content);
+        
+        // 设置时间
+        detailNoteTime.setText(person.notfresh.noteplus.util.DisplayUtil.formatTimestamp(note.getTimestamp()));
+        
+        // 设置花费（如果有）
+        if (note.getCost() > 0) {
+            detailNoteCost.setText("花费：" + note.getCost() + "元");
+            detailNoteCost.setVisibility(View.VISIBLE);
+        } else {
+            detailNoteCost.setVisibility(View.GONE);
+        }
+        
+        // 加载并显示标签
+        detailTagsContainer.removeAllViews();
+        if (tagsCursor != null && tagsCursor.getCount() > 0) {
+            detailTagsContainer.setVisibility(View.VISIBLE);
+            tagsCursor.moveToPosition(-1); // 重置到开始位置
+            while (tagsCursor.moveToNext()) {
+                @SuppressLint("Range") String tagName = tagsCursor.getString(
+                    tagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_NAME));
+                @SuppressLint("Range") String tagColor = tagsCursor.getString(
+                    tagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_COLOR));
+                
+                // 创建标签 TextView
+                TextView tagView = new TextView(this);
+                tagView.setText(tagName);
+                tagView.setPadding(
+                    person.notfresh.noteplus.util.DisplayUtil.dpToPx(this, 6), 
+                    person.notfresh.noteplus.util.DisplayUtil.dpToPx(this, 2), 
+                    person.notfresh.noteplus.util.DisplayUtil.dpToPx(this, 6), 
+                    person.notfresh.noteplus.util.DisplayUtil.dpToPx(this, 2)
+                );
+                tagView.setTextColor(Color.WHITE);
+                tagView.setTextSize(11);
+                
+                try {
+                    tagView.setBackgroundColor(Color.parseColor(tagColor));
+                } catch (Exception e) {
+                    tagView.setBackgroundColor(Color.GRAY);
+                }
+                
+                // 设置margin
+                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                );
+                params.setMargins(0, 0, 
+                    person.notfresh.noteplus.util.DisplayUtil.dpToPx(this, 4), 0);
+                tagView.setLayoutParams(params);
+                
+                detailTagsContainer.addView(tagView);
+            }
+        } else {
+            detailTagsContainer.setVisibility(View.GONE);
+        }
+        
+        // 设置Comment列表适配器
+        NoteDetailCommentAdapter commentAdapter = new NoteDetailCommentAdapter(comments);
+        detailCommentList.setAdapter(commentAdapter);
+        
+        // 设置关闭按钮事件
+        btnCloseDetail.setOnClickListener(v -> {
+            if (tagsCursor != null && !tagsCursor.isClosed()) {
+                tagsCursor.close();
+            }
+            dialog.dismiss();
+        });
+        btnCloseDetail2.setOnClickListener(v -> {
+            if (tagsCursor != null && !tagsCursor.isClosed()) {
+                tagsCursor.close();
+            }
+            dialog.dismiss();
+        });
+        
+        // 设置追加内容按钮事件
+        btnAddComment.setOnClickListener(v -> {
+            // TODO: 实现追加内容功能（可选）
+            Toast.makeText(this, "追加内容功能待实现", Toast.LENGTH_SHORT).show();
+        });
+        
+        // 设置对话框窗口大小（90%宽度，80%高度）
+        Window window = dialog.getWindow();
+        if (window != null) {
+            WindowManager.LayoutParams params = window.getAttributes();
+            params.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.9);
+            params.height = (int) (getResources().getDisplayMetrics().heightPixels * 0.8);
+            window.setAttributes(params);
+        }
+        
+        // 显示对话框
+        dialog.show();
+    }
+    
+    /**
+     * Note详情对话框的Comment列表适配器
+     */
+    private class NoteDetailCommentAdapter extends android.widget.BaseAdapter {
+        private final List<Comment> comments;
+        
+        public NoteDetailCommentAdapter(List<Comment> comments) {
+            this.comments = comments;
+        }
+        
+        @Override
+        public int getCount() {
+            return comments.size();
+        }
+        
+        @Override
+        public Object getItem(int position) {
+            return comments.get(position);
+        }
+        
+        @Override
+        public long getItemId(int position) {
+            return position;
+        }
+        
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            if (convertView == null) {
+                convertView = getLayoutInflater().inflate(R.layout.item_note_detail_comment, parent, false);
+            }
+            
+            Comment comment = comments.get(position);
+            
+            TextView commentTime = convertView.findViewById(R.id.commentTime);
+            TextView commentContent = convertView.findViewById(R.id.commentContent);
+            TextView commentCost = convertView.findViewById(R.id.commentCost);
+            
+            // 设置时间
+            commentTime.setText(person.notfresh.noteplus.util.DisplayUtil.formatCommentTimestamp(comment.getTimestamp()));
+            
+            // 设置内容
+            commentContent.setText(comment.getContent());
+            
+            // 设置花费（如果有）
+            if (comment.getCost() > 0) {
+                commentCost.setText("花费：" + comment.getCost() + "元");
+                commentCost.setVisibility(View.VISIBLE);
+            } else {
+                commentCost.setVisibility(View.GONE);
+            }
+            
+            return convertView;
+        }
+    }
+    
+    /**
      * 根据Spinner位置获取对应的时间范围枚举
      * 
      * @param position Spinner的选中位置
@@ -2357,7 +2814,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                 GlobalTimeline globalTimeline = new GlobalTimeline(projectManager);
                 
                 // 加载指定时间范围的数据
-                List<Comment> timelineItems = globalTimeline.loadGlobalTimeline(timeRange, descending);
+                final List<Comment> timelineItems = globalTimeline.loadGlobalTimeline(timeRange, descending);
                 
                 // 计算已用时间
                 long elapsedTime = System.currentTimeMillis() - startTime;
@@ -2376,16 +2833,94 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                         TimelineAdapter adapter = new TimelineAdapter(timelineItems);
                         listView.setAdapter(adapter);
                         
-                        // 设置点击事件
+                        // 清除之前的延迟任务和状态（防止干扰）
+                        timelineClickHandler.removeCallbacks(timelineClickRunnable);
+                        lastTimelineClickTime = 0;
+                        lastTimelineClickPosition = -1;
+                        
+                        // 用于存储待处理的点击项（用于双击检测）
+                        final Comment[] pendingClickItem = {null};
+                        
+                        android.util.Log.d("Timeline", "设置点击事件监听器，数据项数量: " + timelineItems.size());
+                        
+                        // 确保ListView可以接收点击事件
+                        listView.setClickable(true);
+                        listView.setFocusable(true);
+                        listView.setItemsCanFocus(false); // 确保item不会获取焦点，让ListView处理点击
+                        
+                        // 设置双击检测点击事件
                         listView.setOnItemClickListener((parent, view, position, id) -> {
-                            Comment item = timelineItems.get(position);
-                            // 跳过日期分割线项
-                            if (item.getItemType() == person.notfresh.noteplus.core.model.TimelineItemType.DATE_DIVIDER) {
+                            android.util.Log.d("Timeline", "点击事件触发: position=" + position + ", listSize=" + timelineItems.size());
+                            
+                            // 检查位置是否有效
+                            if (position < 0 || position >= timelineItems.size()) {
+                                android.util.Log.w("Timeline", "无效的位置: " + position);
                                 return;
                             }
-                            // TODO: 可以在这里添加点击跳转到对应 Note 详情的逻辑
-                            // 需要切换到对应项目并打开对应的 Note
+                            
+                            Comment item = timelineItems.get(position);
+                            
+                            // 跳过日期分割线项
+                            if (item.getItemType() == person.notfresh.noteplus.core.model.TimelineItemType.DATE_DIVIDER) {
+                                android.util.Log.d("Timeline", "跳过日期分割线项");
+                                return;
+                            }
+                            
+                            long currentTime = System.currentTimeMillis();
+                            long timeSinceLastClick = lastTimelineClickTime > 0 ? currentTime - lastTimelineClickTime : Long.MAX_VALUE;
+                            
+                            android.util.Log.d("Timeline", "点击事件: position=" + position + 
+                                ", lastPosition=" + lastTimelineClickPosition + 
+                                ", timeSinceLastClick=" + timeSinceLastClick + 
+                                ", DOUBLE_CLICK_DELAY=" + DOUBLE_CLICK_DELAY +
+                                ", noteId=" + item.getNoteId() +
+                                ", project=" + item.getProjectName());
+                            
+                            // 如果距离上次点击时间小于双击间隔且位置相同，认为是双击
+                            if (lastTimelineClickTime > 0 && 
+                                timeSinceLastClick < DOUBLE_CLICK_DELAY && 
+                                lastTimelineClickPosition == position &&
+                                pendingClickItem[0] != null) {
+                                // 取消单击延迟执行
+                                timelineClickHandler.removeCallbacks(timelineClickRunnable);
+                                
+                                android.util.Log.d("Timeline", "检测到双击！准备调用handleTimelineDoubleClick");
+                                
+                                // 执行双击操作
+                                handleTimelineDoubleClick(item);
+                                
+                                // 重置状态
+                                lastTimelineClickTime = 0;
+                                lastTimelineClickPosition = -1;
+                                pendingClickItem[0] = null;
+                            } else {
+                                // 取消之前的延迟任务（如果有）
+                                timelineClickHandler.removeCallbacks(timelineClickRunnable);
+                                
+                                android.util.Log.d("Timeline", "第一次点击，等待双击...");
+                                
+                                // 记录点击时间和位置
+                                lastTimelineClickTime = currentTime;
+                                lastTimelineClickPosition = position;
+                                pendingClickItem[0] = item;
+                                
+                                // 延迟执行单击操作（如果在这期间没有双击）
+                                timelineClickRunnable = () -> {
+                                    android.util.Log.d("Timeline", "单击延迟执行，未检测到双击");
+                                    // 临时测试：单击也触发详情查看（用于调试）
+                                    // TODO: 正式版本应该移除这个，只支持双击
+                                    android.util.Log.d("Timeline", "临时测试：单击也触发详情查看");
+                                    handleTimelineDoubleClick(pendingClickItem[0]);
+                                    
+                                    lastTimelineClickTime = 0;
+                                    lastTimelineClickPosition = -1;
+                                    pendingClickItem[0] = null;
+                                };
+                                timelineClickHandler.postDelayed(timelineClickRunnable, DOUBLE_CLICK_DELAY);
+                            }
                         });
+                        
+                        android.util.Log.d("Timeline", "点击事件监听器设置完成");
                     };
                     
                     // 如果还没到最少显示时间，延迟关闭
@@ -2397,7 +2932,9 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                     }
                 });
             } catch (Exception e) {
-                e.printStackTrace();
+                // 使用Log记录完整异常信息，包括堆栈，便于通过"Timeline"标签过滤
+                android.util.Log.e("Timeline", "Timeline: 加载时间线数据失败", e);
+                
                 // 计算已用时间
                 long elapsedTime = System.currentTimeMillis() - startTime;
                 long remainingTime = Math.max(0, MIN_DISPLAY_TIME - elapsedTime);
@@ -2405,7 +2942,19 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                 runOnUiThread(() -> {
                     Runnable errorRunnable = () -> {
                         progressDialog.dismiss();
-                        Toast.makeText(this, "加载时间线失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                        
+                        // 即使加载失败，也要设置一个空的点击事件监听器，防止后续点击无效
+                        // 清除之前的延迟任务和状态
+                        timelineClickHandler.removeCallbacks(timelineClickRunnable);
+                        lastTimelineClickTime = 0;
+                        lastTimelineClickPosition = -1;
+                        
+                        // 设置一个空的点击事件监听器（至少不会报错）
+                        listView.setOnItemClickListener((parent, view, position, id) -> {
+                            // 数据加载失败，无法处理点击
+                        });
+                        
+                        Toast.makeText(this, "Timeline: 加载时间线失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                     };
                     
                     if (remainingTime > 0) {

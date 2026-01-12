@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="12dp"
+    android:background="#FFFFFF"
+    android:layout_marginBottom="4dp">
+
+    <!-- 时间和花费信息 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="4dp">
+
+        <TextView
+            android:id="@+id/commentTime"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="2024-01-01 12:00:00"
+            android:textSize="11sp"
+            android:textColor="#9E9E9E" />
+
+        <TextView
+            android:id="@+id/commentCost"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textSize="11sp"
+            android:textColor="#9E9E9E"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- Comment内容 -->
+    <TextView
+        android:id="@+id/commentContent"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Comment内容..."
+        android:textSize="14sp"
+        android:textColor="#212121"
+        android:lineSpacingExtra="2dp" />
+
+</LinearLayout>
+

@@ -83,8 +83,16 @@ public class GlobalTimeline {
         // 获取所有项目列表
         List<String> projects = projectManager.getProjectList();
         
-        // 遍历每个项目，加载其时间线数据
+        // 获取回收站中的项目列表，排除这些项目（因为它们的数据库表结构可能不完整）
+        List<String> recycledProjects = projectManager.getRecycledProjects();
+        
+        // 遍历每个项目，加载其时间线数据（排除回收站中的项目）
         for (String projectName : projects) {
+            // 跳过回收站中的项目
+            if (recycledProjects.contains(projectName)) {
+                android.util.Log.d("Timeline", "Timeline: 跳过回收站中的项目: " + projectName);
+                continue;
+            }
             try {
                 // 获取该项目的数据库帮助类
                 NoteDbHelper dbHelper = projectManager.getDbHelperForProject(projectName);
@@ -103,7 +111,7 @@ public class GlobalTimeline {
                 
             } catch (Exception e) {
                 // 如果某个项目加载失败，记录错误但继续处理其他项目
-                e.printStackTrace();
+                android.util.Log.e("Timeline", "Timeline: 加载项目时间线失败: " + projectName, e);
             }
         }
         
