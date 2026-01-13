@@ -50,6 +50,7 @@ import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.ListView;
+import android.widget.ScrollView;
 import android.widget.SimpleCursorAdapter;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -149,9 +150,6 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
 
     // 添加dialog作为成员变量
     private AlertDialog tagSelectionDialog;
-
-    
-
     // 新增视图引用
     private TextView startTimeText;
     private TextView endTimeText;
@@ -2346,64 +2344,9 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             return;
         }
         
-        // 获取当前项目
-        String currentProjectName = projectManager.getCurrentProject();
-        
-        // 比较项目名称，决定是否需要切换项目
-        if (targetProjectName != null && targetProjectName.equals(currentProjectName)) {
-            // 同项目，直接加载详情
-            android.util.Log.d("Timeline", "同项目，直接加载详情");
-            loadNoteDetail(noteId, targetProjectName);
-        } else {
-            // 不同项目，需要切换项目后再加载详情
-            android.util.Log.d("Timeline", "不同项目，切换项目后加载详情");
-            switchProjectAndShowDetail(targetProjectName, noteId);
-        }
-    }
-    
-    /**
-     * 切换项目并显示Note详情
-     * 
-     * @param projectName 目标项目名称
-     * @param noteId Note ID
-     */
-    private void switchProjectAndShowDetail(String projectName, long noteId) {
-        // 使用后台线程处理项目切换，不显示进度提示
-        new Thread(() -> {
-            try {
-                // 切换项目
-                boolean switchSuccess = projectManager.switchToProject(projectName);
-                if (!switchSuccess) {
-                    throw new Exception("Timeline: 切换项目失败: " + projectName);
-                }
-                
-                // 更新数据库Helper
-                if (dbHelper != null) {
-                    dbHelper.close();
-                }
-                dbHelper = projectManager.getCurrentDbHelper();
-                
-                // 更新导入导出管理器
-                importExportManager = new person.notfresh.noteplus.manager.ImportExportManager(
-                    MainActivity.this, dbHelper, projectManager);
-                
-                // 在UI线程中更新UI并继续加载详情
-                runOnUiThread(() -> {
-                    // 更新标题
-                    updateTitle();
-                    
-                    // 直接加载Note详情，不显示进度提示
-                    loadNoteDetail(noteId, projectName);
-                });
-            } catch (Exception e) {
-                // 使用Log记录完整异常信息，包括堆栈，便于通过"Timeline"标签过滤
-                android.util.Log.e("Timeline", "Timeline: 切换项目失败", e);
-                
-                runOnUiThread(() -> {
-                    Toast.makeText(this, "Timeline: 切换项目失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-                });
-            }
-        }).start();
+        // 直接加载详情，不切换项目（使用getDbHelperForProject查询，不改变当前项目）
+        android.util.Log.d("Timeline", "加载详情，项目: " + targetProjectName);
+        loadNoteDetail(noteId, targetProjectName);
     }
     
     /**
@@ -2603,6 +2546,37 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         LinearLayout detailTagsContainer = dialogView.findViewById(R.id.detailTagsContainer);
         ListView detailCommentList = dialogView.findViewById(R.id.detailCommentList);
         Button btnAddComment = dialogView.findViewById(R.id.btnAddComment);
+        // 查找ScrollView（使用View类型避免R.id未生成的编译错误）
+        ScrollView noteContentScrollView = null;
+        try {
+            View scrollViewView = dialogView.findViewById(dialogView.getResources().getIdentifier("noteContentScrollView", "id", getPackageName()));
+            if (scrollViewView instanceof ScrollView) {
+                noteContentScrollView = (ScrollView) scrollViewView;
+            }
+        } catch (Exception e) {
+            // 如果通过ID找不到，通过遍历查找
+            ViewGroup rootView = (ViewGroup) dialogView;
+            for (int i = 0; i < rootView.getChildCount(); i++) {
+                View child = rootView.getChildAt(i);
+                if (child instanceof ScrollView) {
+                    noteContentScrollView = (ScrollView) child;
+                    break;
+                }
+            }
+        }
+        // 查找Comment列表容器
+        LinearLayout commentListContainer = null;
+        try {
+            View containerView = dialogView.findViewById(dialogView.getResources().getIdentifier("commentListContainer", "id", getPackageName()));
+            if (containerView instanceof LinearLayout) {
+                commentListContainer = (LinearLayout) containerView;
+            }
+        } catch (Exception e) {
+            // 如果通过ID找不到，通过ListView的父容器查找
+            if (detailCommentList != null && detailCommentList.getParent() instanceof LinearLayout) {
+                commentListContainer = (LinearLayout) detailCommentList.getParent();
+            }
+        }
         
         // 创建对话框
         AlertDialog dialog = builder.create();
@@ -2699,17 +2673,48 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             Toast.makeText(this, "追加内容功能待实现", Toast.LENGTH_SHORT).show();
         });
         
-        // 设置对话框窗口大小（90%宽度，80%高度）
-        Window window = dialog.getWindow();
-        if (window != null) {
-            WindowManager.LayoutParams params = window.getAttributes();
-            params.width = (int) (getResources().getDisplayMetrics().widthPixels * 0.9);
-            params.height = (int) (getResources().getDisplayMetrics().heightPixels * 0.8);
-            window.setAttributes(params);
-        }
-        
         // 显示对话框
         dialog.show();
+        
+        // 设置对话框窗口大小（与时间线对话框一致：90%宽度，80%高度）
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setLayout(
+                (int) (getResources().getDisplayMetrics().widthPixels * 0.9),
+                (int) (getResources().getDisplayMetrics().heightPixels * 0.8)
+            );
+        }
+        
+        // 现在整个内容都在ScrollView中，可以自然滚动
+        // ListView在ScrollView中需要设置固定高度才能正确显示
+        if (detailCommentList != null && commentListContainer != null) {
+            dialogView.post(() -> {
+                // 等待ListView渲染完成后计算高度
+                detailCommentList.post(() -> {
+                    if (detailCommentList.getAdapter() != null && detailCommentList.getAdapter().getCount() > 0) {
+                        // 计算ListView的总高度
+                        int totalHeight = 0;
+                        int dividerHeight = detailCommentList.getDividerHeight();
+                        for (int i = 0; i < detailCommentList.getChildCount(); i++) {
+                            View child = detailCommentList.getChildAt(i);
+                            if (child != null) {
+                                totalHeight += child.getMeasuredHeight();
+                                if (i > 0) {
+                                    totalHeight += dividerHeight;
+                                }
+                            }
+                        }
+                        // 如果计算出的高度大于0，设置ListView的高度
+                        if (totalHeight > 0) {
+                            ViewGroup.LayoutParams params = detailCommentList.getLayoutParams();
+                            if (params != null) {
+                                params.height = totalHeight;
+                                detailCommentList.setLayoutParams(params);
+                            }
+                        }
+                    }
+                });
+            });
+        }
     }
     
     /**

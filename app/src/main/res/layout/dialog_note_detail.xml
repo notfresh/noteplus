@@ -32,117 +32,128 @@
             android:minWidth="100dp" />
     </LinearLayout>
 
-    <!-- Note内容区域（可滚动） -->
+    <!-- 整体内容区域（可滚动，包含Note和Comment） -->
     <ScrollView
+        android:id="@+id/noteContentScrollView"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:padding="16dp"
-        android:fillViewport="true">
+        android:fillViewport="false">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
-            <!-- 项目名称 -->
-            <TextView
-                android:id="@+id/detailProjectName"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="项目名称"
-                android:textSize="12sp"
-                android:textColor="#757575"
-                android:textStyle="bold"
-                android:layout_marginBottom="8dp" />
-
-            <!-- Note内容 -->
-            <TextView
-                android:id="@+id/detailNoteContent"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Note内容..."
-                android:textSize="14sp"
-                android:textColor="#212121"
-                android:lineSpacingExtra="4dp"
-                android:layout_marginBottom="12dp" />
-
-            <!-- 时间和花费信息 -->
+            <!-- Note内容区域 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="8dp">
+                android:orientation="vertical"
+                android:padding="16dp">
 
+                <!-- 项目名称 -->
                 <TextView
-                    android:id="@+id/detailNoteTime"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="2024-01-01 12:00:00"
-                    android:textSize="11sp"
-                    android:textColor="#9E9E9E" />
-
-                <TextView
-                    android:id="@+id/detailNoteCost"
+                    android:id="@+id/detailProjectName"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text=""
-                    android:textSize="11sp"
-                    android:textColor="#9E9E9E"
-                    android:visibility="gone" />
+                    android:text="项目名称"
+                    android:textSize="12sp"
+                    android:textColor="#757575"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="8dp" />
+
+                <!-- Note内容 -->
+                <TextView
+                    android:id="@+id/detailNoteContent"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Note内容..."
+                    android:textSize="14sp"
+                    android:textColor="#212121"
+                    android:lineSpacingExtra="4dp"
+                    android:layout_marginBottom="12dp" />
+
+                <!-- 时间和花费信息 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginBottom="8dp">
+
+                    <TextView
+                        android:id="@+id/detailNoteTime"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="2024-01-01 12:00:00"
+                        android:textSize="11sp"
+                        android:textColor="#9E9E9E" />
+
+                    <TextView
+                        android:id="@+id/detailNoteCost"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text=""
+                        android:textSize="11sp"
+                        android:textColor="#9E9E9E"
+                        android:visibility="gone" />
+                </LinearLayout>
+
+                <!-- 标签容器 -->
+                <LinearLayout
+                    android:id="@+id/detailTagsContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="8dp"
+                    android:visibility="gone">
+
+                    <!-- 标签将通过代码动态添加 -->
+                </LinearLayout>
             </LinearLayout>
 
-            <!-- 标签容器 -->
+            <!-- Comment列表区域 -->
             <LinearLayout
-                android:id="@+id/detailTagsContainer"
+                android:id="@+id/commentListContainer"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginTop="8dp"
-                android:visibility="gone">
+                android:orientation="vertical"
+                android:background="#F5F5F5">
 
-                <!-- 标签将通过代码动态添加 -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="追加内容"
+                    android:textSize="14sp"
+                    android:textColor="#757575"
+                    android:textStyle="bold"
+                    android:padding="12dp"
+                    android:background="#FFFFFF" />
+
+                <ListView
+                    android:id="@+id/detailCommentList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="100dp"
+                    android:divider="@android:color/transparent"
+                    android:dividerHeight="8dp"
+                    android:padding="8dp"
+                    android:clipToPadding="false" />
             </LinearLayout>
         </LinearLayout>
     </ScrollView>
 
-    <!-- Comment列表区域 -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:orientation="vertical"
-        android:background="#F5F5F5">
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="追加内容"
-            android:textSize="14sp"
-            android:textColor="#757575"
-            android:textStyle="bold"
-            android:padding="12dp"
-            android:background="#FFFFFF" />
-
-        <ListView
-            android:id="@+id/detailCommentList"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:divider="@android:color/transparent"
-            android:dividerHeight="8dp"
-            android:padding="8dp"
-            android:clipToPadding="false" />
-    </LinearLayout>
-
-    <!-- 底部操作栏 -->
+    <!-- 底部操作栏（固定在弹窗最底部） -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="end"
-        android:padding="8dp"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="0dp"
         android:background="#F5F5F5">
 
         <Button
