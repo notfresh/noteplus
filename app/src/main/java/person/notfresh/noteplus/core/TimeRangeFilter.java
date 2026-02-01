@@ -11,6 +11,11 @@ public enum TimeRangeFilter {
     LAST_DAY(1),
     
     /**
+     * 最近三天
+     */
+    LAST_THREE_DAYS(3),
+    
+    /**
      * 最近一周
      */
     LAST_WEEK(7),

@@ -52,9 +52,12 @@ public class ImportExportManager {
      * 写入JSON数据（包含评论）
      */
     public void writeJsonData(OutputStream outputStream) throws IOException, JSONException {
+        android.util.Log.i("NotePlusExport", "[writeJsonData] Starting JSON data export");
         SQLiteDatabase db = dbHelper.getReadableDatabase();
+        android.util.Log.d("NotePlusExport", "[writeJsonData] Database opened");
         
         // 获取所有记录
+        android.util.Log.d("NotePlusExport", "[writeJsonData] Querying notes from database");
         Cursor notesCursor = db.query(
                 NoteDbHelper.TABLE_NOTES,
                 new String[]{"_id", NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP, NoteDbHelper.COLUMN_COST},
@@ -62,13 +65,20 @@ public class ImportExportManager {
                 NoteDbHelper.COLUMN_TIMESTAMP + " DESC"
         );
         
+        int noteCount = notesCursor.getCount();
+        android.util.Log.i("NotePlusExport", "[writeJsonData] Found " + noteCount + " notes to export");
+        
         JSONArray notesArray = new JSONArray();
+        int processedNotes = 0;
         
         // 构建记录
         while (notesCursor.moveToNext()) {
+            processedNotes++;
+            android.util.Log.d("NotePlusExport", "[writeJsonData] Processing note " + processedNotes + "/" + noteCount);
             JSONObject noteObject = new JSONObject();
             
             long noteId = notesCursor.getLong(notesCursor.getColumnIndexOrThrow("_id"));
+            android.util.Log.d("NotePlusExport", "[writeJsonData] Note ID: " + noteId);
             String content = notesCursor.getString(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_CONTENT));
             long timestamp = notesCursor.getLong(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TIMESTAMP));
             double cost = notesCursor.getDouble(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COST));
@@ -79,6 +89,7 @@ public class ImportExportManager {
             noteObject.put("cost", cost);
             
             // 获取时间范围
+            android.util.Log.d("NotePlusExport", "[writeJsonData] Fetching time ranges for note " + noteId);
             Cursor timeRangeCursor = dbHelper.getTimeRangesForNote(noteId);
             if (timeRangeCursor.moveToFirst()) {
                 JSONObject timeRange = new JSONObject();
@@ -88,24 +99,33 @@ public class ImportExportManager {
                 timeRange.put("start", sdf.format(new Date(startTime)));
                 timeRange.put("end", sdf.format(new Date(endTime)));
                 noteObject.put("timeRange", timeRange);
+                android.util.Log.d("NotePlusExport", "[writeJsonData] Time range added for note " + noteId);
             }
             timeRangeCursor.close();
             
             // 获取标签
+            android.util.Log.d("NotePlusExport", "[writeJsonData] Fetching tags for note " + noteId);
             Cursor tagsCursor = dbHelper.getTagsForNote(noteId);
             JSONArray tagsArray = new JSONArray();
+            int tagCount = 0;
             while (tagsCursor.moveToNext()) {
                 JSONObject tagObject = new JSONObject();
                 tagObject.put("name", tagsCursor.getString(tagsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TAG_NAME)));
                 tagObject.put("color", tagsCursor.getString(tagsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TAG_COLOR)));
                 tagsArray.put(tagObject);
+                tagCount++;
             }
             tagsCursor.close();
             noteObject.put("tags", tagsArray);
+            if (tagCount > 0) {
+                android.util.Log.d("NotePlusExport", "[writeJsonData] Added " + tagCount + " tags for note " + noteId);
+            }
             
             // 获取评论（追加内容）
+            android.util.Log.d("NotePlusExport", "[writeJsonData] Fetching comments for note " + noteId);
             Cursor commentsCursor = dbHelper.getCommentsForNote(noteId);
             JSONArray commentsArray = new JSONArray();
+            int commentCount = 0;
             while (commentsCursor.moveToNext()) {
                 JSONObject commentObject = new JSONObject();
                 long commentId = commentsCursor.getLong(
@@ -129,38 +149,52 @@ public class ImportExportManager {
                 commentObject.put("cost", commentCost);
                 
                 commentsArray.put(commentObject);
+                commentCount++;
             }
             commentsCursor.close();
             
             // 如果有评论，才添加到JSON中
             if (commentsArray.length() > 0) {
                 noteObject.put("comments", commentsArray);
+                android.util.Log.d("NotePlusExport", "[writeJsonData] Added " + commentCount + " comments for note " + noteId);
             }
             
             notesArray.put(noteObject);
         }
         
         notesCursor.close();
+        android.util.Log.i("NotePlusExport", "[writeJsonData] Processed all " + processedNotes + " notes");
         
         // 创建根JSON对象
+        android.util.Log.d("NotePlusExport", "[writeJsonData] Creating root JSON object");
         JSONObject rootObject = new JSONObject();
         rootObject.put("projectName", projectManager.getCurrentProject());
         rootObject.put("exportDate", sdf.format(new Date()));
         rootObject.put("notes", notesArray);
+        android.util.Log.d("NotePlusExport", "[writeJsonData] Root object created, project: " + projectManager.getCurrentProject());
         
         // 写入数据
+        android.util.Log.d("NotePlusExport", "[writeJsonData] Creating OutputStreamWriter with UTF-8 encoding");
         OutputStreamWriter writer = new OutputStreamWriter(outputStream, StandardCharsets.UTF_8);
-        writer.write(rootObject.toString(2)); // 格式化JSON输出
+        android.util.Log.d("NotePlusExport", "[writeJsonData] Writing JSON string to output stream");
+        String jsonString = rootObject.toString(2); // 格式化JSON输出
+        android.util.Log.d("NotePlusExport", "[writeJsonData] JSON string length: " + jsonString.length() + " characters");
+        writer.write(jsonString);
+        android.util.Log.d("NotePlusExport", "[writeJsonData] Flushing output stream");
         writer.flush();
+        android.util.Log.i("NotePlusExport", "[writeJsonData] JSON data export completed successfully");
     }
 
     /**
      * 写入CSV数据（兼容旧格式，支持评论）
      */
     public void writeCsvData(OutputStream outputStream) throws IOException {
+        android.util.Log.i("NotePlusExport", "[writeCsvData] Starting CSV data export");
         SQLiteDatabase db = dbHelper.getReadableDatabase();
+        android.util.Log.d("NotePlusExport", "[writeCsvData] Database opened");
         
         // 获取所有记录
+        android.util.Log.d("NotePlusExport", "[writeCsvData] Querying notes from database");
         Cursor notesCursor = db.query(
                 NoteDbHelper.TABLE_NOTES,
                 new String[]{"_id", NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP, NoteDbHelper.COLUMN_COST},
@@ -168,9 +202,14 @@ public class ImportExportManager {
                 NoteDbHelper.COLUMN_TIMESTAMP + " DESC"
         );
         
+        int noteCount = notesCursor.getCount();
+        android.util.Log.i("NotePlusExport", "[writeCsvData] Found " + noteCount + " notes to export");
+        
         OutputStreamWriter writer = new OutputStreamWriter(outputStream, StandardCharsets.UTF_8);
+        android.util.Log.d("NotePlusExport", "[writeCsvData] OutputStreamWriter created with UTF-8 encoding");
         
         // 检查是否有评论，决定使用哪种格式
+        android.util.Log.d("NotePlusExport", "[writeCsvData] Checking if comments exist");
         boolean hasComments = false;
         // 先检查是否有评论（不移动主游标）
         Cursor checkCommentsCursor = db.query(
@@ -180,6 +219,9 @@ public class ImportExportManager {
         );
         if (checkCommentsCursor.moveToFirst() && checkCommentsCursor.getInt(0) > 0) {
             hasComments = true;
+            android.util.Log.d("NotePlusExport", "[writeCsvData] Comments found, using new format with type column");
+        } else {
+            android.util.Log.d("NotePlusExport", "[writeCsvData] No comments found, using old format");
         }
         checkCommentsCursor.close();
         
@@ -192,7 +234,10 @@ public class ImportExportManager {
         }
         
         // 写入记录
+        int processedNotes = 0;
         while (notesCursor.moveToNext()) {
+            processedNotes++;
+            android.util.Log.d("NotePlusExport", "[writeCsvData] Processing note " + processedNotes + "/" + noteCount);
             long noteId = notesCursor.getLong(notesCursor.getColumnIndexOrThrow("_id"));
             String content = notesCursor.getString(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_CONTENT));
             long timestamp = notesCursor.getLong(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TIMESTAMP));
@@ -287,7 +332,10 @@ public class ImportExportManager {
         }
         
         notesCursor.close();
+        android.util.Log.i("NotePlusExport", "[writeCsvData] Processed all " + processedNotes + " notes");
+        android.util.Log.d("NotePlusExport", "[writeCsvData] Flushing output stream");
         writer.flush();
+        android.util.Log.i("NotePlusExport", "[writeCsvData] CSV data export completed successfully");
     }
 
     // ==================== 导入方法 ====================

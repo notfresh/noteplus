@@ -132,18 +132,18 @@ public class NoteDataLoader {
                 notesCursor.close();
             }
             notesCursor = db.query(
-                    NoteDbHelper.TABLE_NOTES,
-                    new String[]{
-                        "_id",
-                        NoteDbHelper.COLUMN_CONTENT,
-                        NoteDbHelper.COLUMN_TIMESTAMP,
-                        NoteDbHelper.COLUMN_COST
-                    },
-                    noteSelection,
-                    noteSelectionArgs,
-                    null, null,
-                    null  // 不在这里排序，后面统一排序
-            );
+                NoteDbHelper.TABLE_NOTES,
+                new String[]{
+                    "_id",
+                    NoteDbHelper.COLUMN_CONTENT,
+                    NoteDbHelper.COLUMN_TIMESTAMP,
+                    NoteDbHelper.COLUMN_COST
+                },
+                noteSelection,
+                noteSelectionArgs,
+                null, null,
+                null  // 不在这里排序，后面统一排序
+        );
         }
         
         if (notesCursor != null) {
@@ -189,20 +189,20 @@ public class NoteDataLoader {
         try {
             // 尝试查询 Comment 表
             commentsCursor = db.query(
-                    NoteDbHelper.TABLE_NOTE_COMMENTS,
-                    new String[]{
-                        NoteDbHelper.COLUMN_COMMENT_ID,
-                        NoteDbHelper.COLUMN_COMMENT_NOTE_ID,
-                        NoteDbHelper.COLUMN_PARENT_COMMENT_ID,
-                        NoteDbHelper.COLUMN_COMMENT_CONTENT,
-                        NoteDbHelper.COLUMN_COMMENT_TIMESTAMP,
-                        NoteDbHelper.COLUMN_COMMENT_COST
-                    },
-                    commentSelection,
-                    commentSelectionArgs,
-                    null, null,
-                    null  // 不在这里排序，后面统一排序
-            );
+                NoteDbHelper.TABLE_NOTE_COMMENTS,
+                new String[]{
+                    NoteDbHelper.COLUMN_COMMENT_ID,
+                    NoteDbHelper.COLUMN_COMMENT_NOTE_ID,
+                    NoteDbHelper.COLUMN_PARENT_COMMENT_ID,
+                    NoteDbHelper.COLUMN_COMMENT_CONTENT,
+                    NoteDbHelper.COLUMN_COMMENT_TIMESTAMP,
+                    NoteDbHelper.COLUMN_COMMENT_COST
+                },
+                commentSelection,
+                commentSelectionArgs,
+                null, null,
+                null  // 不在这里排序，后面统一排序
+        );
         } catch (android.database.sqlite.SQLiteException e) {
             // 如果查询失败（可能是 note_comments 表不存在），记录警告并跳过
             android.util.Log.w("Timeline", "Timeline: 查询 Comment 表失败，可能表不存在: " + e.getMessage());

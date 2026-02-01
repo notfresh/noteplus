@@ -73,9 +73,13 @@ public class GlobalTimeline {
      * 从所有项目中加载指定时间范围内的 Note 和 Comment，展平为统一的时间线
      * 使用 loadFullTimelineByTimeRange 方法，直接查询时间范围内的所有 Note 和 Comment，平等处理
      * 
+     * 置顶行为：置顶的Note会同时出现在两个位置：
+     * 1. 在列表最前面的置顶区域（按时间排序）
+     * 2. 在原本的时间位置（保持原样）
+     * 
      * @param timeRange 时间范围枚举：LAST_DAY（最近一天）、LAST_WEEK（最近一周）、LAST_MONTH（最近一个月）
      * @param descending true表示逆序（最新的在前），false表示顺序（最旧的在前）
-     * @return 所有项目的时间线数据，按时间排序
+     * @return 所有项目的时间线数据，置顶Note在最前面，然后按时间排序
      */
     public List<Comment> loadGlobalTimeline(TimeRangeFilter timeRange, boolean descending) {
         List<Comment> globalTimeline = new ArrayList<>();
@@ -117,28 +121,11 @@ public class GlobalTimeline {
         
         // 对所有项目的时间线数据进行统一排序
         // 注意：虽然每个项目内部已经排序，但跨项目需要重新排序
-        // 排序规则：置顶的Note排在最前面，然后按时间排序；Comment不参与置顶排序
+        // 排序规则：先按时间排序（不考虑置顶），置顶的Note会在后面复制到最前面
         Collections.sort(globalTimeline, new Comparator<Comment>() {
             @Override
             public int compare(Comment a, Comment b) {
-                // 判断是否为Note类型
-                boolean aIsNote = a.getItemType() == TimelineItemType.NOTE;
-                boolean bIsNote = b.getItemType() == TimelineItemType.NOTE;
-                
-                // 如果都是Note，比较置顶状态
-                if (aIsNote && bIsNote) {
-                    // 置顶的Note排在前面
-                    if (a.isPinned() != b.isPinned()) {
-                        return a.isPinned() ? -1 : 1;  // a置顶则a在前，b置顶则b在前
-                    }
-                } else if (aIsNote && a.isPinned()) {
-                    // a是置顶的Note，b是Comment或其他，a排在前面
-                    return -1;
-                } else if (bIsNote && b.isPinned()) {
-                    // b是置顶的Note，a是Comment或其他，b排在前面
-                    return 1;
-                }
-                // 其他情况按时间排序
+                // 按时间排序（不考虑置顶状态）
                 if (descending) {
                     // 逆序：b.timestamp - a.timestamp（最新的在前）
                     return Long.compare(b.getTimestamp(), a.getTimestamp());
@@ -148,6 +135,34 @@ public class GlobalTimeline {
                 }
             }
         });
+        
+        // 收集所有置顶的Note，并创建副本添加到列表最前面
+        // 这样置顶的Note会同时出现在置顶区域和原时间位置
+        List<Comment> pinnedNotes = new ArrayList<>();
+        for (Comment item : globalTimeline) {
+            // 只处理Note类型且置顶的项
+            if (item.getItemType() == TimelineItemType.NOTE && item.isPinned()) {
+                // 创建置顶Note的副本
+                Comment pinnedCopy = createPinnedCopy(item);
+                pinnedNotes.add(pinnedCopy);
+            }
+        }
+        
+        // 将置顶的Note副本添加到列表最前面
+        // 置顶Note之间也按时间排序
+        Collections.sort(pinnedNotes, new Comparator<Comment>() {
+            @Override
+            public int compare(Comment a, Comment b) {
+                if (descending) {
+                    return Long.compare(b.getTimestamp(), a.getTimestamp());
+                } else {
+                    return Long.compare(a.getTimestamp(), b.getTimestamp());
+                }
+            }
+        });
+        
+        // 将置顶Note副本插入到列表最前面
+        globalTimeline.addAll(0, pinnedNotes);
         
         // 插入日期分割线标记
         globalTimeline = insertDateDividers(globalTimeline, descending);
@@ -244,5 +259,26 @@ public class GlobalTimeline {
         divider.setContent(dateText);
         
         return divider;
+    }
+    
+    /**
+     * 创建置顶Note的副本
+     * 用于在时间线中同时显示在置顶区域和原时间位置
+     * 
+     * @param original 原始的置顶Note
+     * @return 置顶Note的副本
+     */
+    private Comment createPinnedCopy(Comment original) {
+        Comment copy = new Comment();
+        copy.setId(original.getId());
+        copy.setNoteId(original.getNoteId());
+        copy.setParentCommentId(original.getParentCommentId());
+        copy.setContent(original.getContent());
+        copy.setTimestamp(original.getTimestamp());
+        copy.setCost(original.getCost());
+        copy.setProjectName(original.getProjectName());
+        copy.setItemType(original.getItemType());
+        copy.setPinned(original.isPinned());  // 保持置顶状态
+        return copy;
     }
 }

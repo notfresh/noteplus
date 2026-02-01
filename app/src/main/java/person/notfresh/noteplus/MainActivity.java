@@ -253,6 +253,15 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             return false;
         });
 
+        // 让输入框在进入时自动获得焦点并显示键盘
+        momentEditText.post(() -> {
+            momentEditText.requestFocus();
+            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.showSoftInput(momentEditText, InputMethodManager.SHOW_IMPLICIT);
+            }
+        });
+
         // 添加输入模式切换功能（三档切换：普通 -> 展开 -> 全屏 -> 普通）
         ImageButton expandButton = findViewById(R.id.expandButton);
         expandButton.setOnClickListener(v -> toggleInputMode());
@@ -817,6 +826,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             showProjectMenu(findViewById(R.id.action_switch_project));
             return true;
         } else if (id == R.id.action_export) {
+            android.util.Log.i("NotePlusExport", "Export menu item clicked");
             showExportDialog();
             return true;
         } else if (id == R.id.action_import) {
@@ -1737,22 +1747,29 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
      * 显示导出选项对话框
      */
     private void showExportDialog() {
+        android.util.Log.e("NotePlusExport", "========================================");
+        android.util.Log.e("NotePlusExport", "showExportDialog() called - UI THREAD");
+        System.err.println("NotePlusExport ERROR: showExportDialog() called");
         String[] exportOptions = new String[]{"导出为CSV", "导出为JSON"};
         
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("选择导出格式");
         builder.setItems(exportOptions, (dialog, which) -> {
             String format = exportOptions[which];
+            android.util.Log.i("NotePlusExport", "User selected export format: " + format);
             // 检查并请求存储权限
             if (checkStoragePermission()) {
+                android.util.Log.d("NotePlusExport", "Storage permission granted, calling exportData()");
                 exportData(format);
             } else {
+                android.util.Log.d("NotePlusExport", "Storage permission not granted, requesting permission");
                 requestStoragePermission();
             }
         });
         
         builder.setNegativeButton("取消", null);
         builder.show();
+        android.util.Log.d("NotePlusExport", "Export dialog shown");
     }
 
     /**
@@ -1796,6 +1813,19 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
      * 导出数据
      */
     private void exportData(String format) {
+        // 使用多种方式输出日志，确保能看到 - 在UI线程中
+        android.util.Log.e("NotePlusExport", "========================================");
+        android.util.Log.e("NotePlusExport", "=== Export process started ===");
+        android.util.Log.e("NotePlusExport", "Export format: " + format);
+        android.util.Log.e("NotePlusExport", "Current project: " + projectManager.getCurrentProject());
+        android.util.Log.e("NotePlusExport", "Android SDK version: " + Build.VERSION.SDK_INT);
+        System.err.println("NotePlusExport ERROR: === Export process started ===");
+        System.err.println("NotePlusExport ERROR: Format: " + format);
+        System.err.println("NotePlusExport ERROR: Project: " + projectManager.getCurrentProject());
+        
+        // 使用Toast显示信息，确保用户能看到
+        Toast.makeText(this, "开始导出: " + format, Toast.LENGTH_SHORT).show();
+        
         String fileName;
         String mimeType;
         String fileExtension = "";
@@ -1805,92 +1835,179 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             mimeType = "text/csv";
             fileExtension = ".csv";
         } else if (format.contains("JSON")) {
-            fileName = projectManager.getCurrentProject() + "_noteplus_export.json";
-            mimeType = "application/json";
-            fileExtension = ".json";
+            fileName = projectManager.getCurrentProject() + "_noteplus_export.json.txt";
+            mimeType = "text/plain"; // 使用 text/plain 以便文件管理器更容易识别
+            fileExtension = ".json.txt";
         } else {
             mimeType = "";
             fileName = "";
         }
+        
+        android.util.Log.i("NotePlusExport", "File name: " + fileName);
+        android.util.Log.i("NotePlusExport", "MIME type: " + mimeType);
 
         // 显示进度对话框
         ProgressDialog progressDialog = new ProgressDialog(this);
         progressDialog.setMessage("正在导出数据...");
         progressDialog.setCancelable(false);
         progressDialog.show();
+        android.util.Log.d("NotePlusExport", "Progress dialog shown");
         
         // 在后台线程执行导出操作
+        android.util.Log.e("NotePlusExport", "Starting background thread");
+        System.err.println("NotePlusExport ERROR: Starting background thread");
         new Thread(() -> {
+            android.util.Log.e("NotePlusExport", "Background thread started");
+            System.out.println("NotePlusExport: Background thread started");
+            System.err.println("NotePlusExport ERROR: Background thread started");
             boolean success = false;
             Uri fileUri = null;
             
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     // 使用作用域存储 (Android 10+)
+                    android.util.Log.i("NotePlusExport", "Using scoped storage (Android 10+)");
+                    ContentResolver resolver = getContentResolver();
+                    android.util.Log.d("NotePlusExport", "ContentResolver obtained");
+                    
+                    // 先尝试删除已存在的文件（如果存在）
+                    android.util.Log.d("NotePlusExport", "Checking for existing file: " + fileName);
+                    try {
+                        Uri existingUri = MediaStore.Files.getContentUri("external");
+                        String selection = MediaStore.MediaColumns.DISPLAY_NAME + "=? AND " +
+                                         MediaStore.MediaColumns.RELATIVE_PATH + "=?";
+                        String[] selectionArgs = new String[]{
+                            fileName,
+                            Environment.DIRECTORY_DOCUMENTS + "/"
+                        };
+                        android.util.Log.d("NotePlusExport", "Deletion query - selection: " + selection);
+                        android.util.Log.d("NotePlusExport", "Deletion query - args: [" + selectionArgs[0] + ", " + selectionArgs[1] + "]");
+                        int deleted = resolver.delete(existingUri, selection, selectionArgs);
+                        if (deleted > 0) {
+                            android.util.Log.i("NotePlusExport", "Deleted existing file, count: " + deleted);
+                        } else {
+                            android.util.Log.d("NotePlusExport", "No existing file found to delete");
+                        }
+                    } catch (Exception e) {
+                        android.util.Log.w("NotePlusExport", "Failed to delete existing file: " + e.getMessage());
+                    }
+                    
+                    android.util.Log.d("NotePlusExport", "Creating ContentValues for file insertion");
                     ContentValues values = new ContentValues();
                     values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
                     values.put(MediaStore.MediaColumns.MIME_TYPE, mimeType);
-                    values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOCUMENTS);
+                    values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOCUMENTS + "/");
+                    android.util.Log.d("NotePlusExport", "ContentValues: DISPLAY_NAME=" + fileName + ", MIME_TYPE=" + mimeType + ", RELATIVE_PATH=" + Environment.DIRECTORY_DOCUMENTS + "/");
                     
-                    ContentResolver resolver = getContentResolver();
+                    android.util.Log.d("NotePlusExport", "Inserting file into MediaStore");
                     fileUri = resolver.insert(MediaStore.Files.getContentUri("external"), values);
                     
                     if (fileUri != null) {
+                        android.util.Log.e("NotePlusExport", "File URI created successfully: " + fileUri.toString());
+                        System.out.println("NotePlusExport: File URI created successfully: " + fileUri.toString());
+                        System.err.println("NotePlusExport ERROR: File URI: " + fileUri.toString());
+                        android.util.Log.e("NotePlusExport", "Opening output stream for file URI");
+                        System.err.println("NotePlusExport ERROR: Opening output stream");
                         OutputStream outputStream = resolver.openOutputStream(fileUri);
                         if (outputStream != null) {
+                            android.util.Log.e("NotePlusExport", "Output stream opened successfully");
+                            System.err.println("NotePlusExport ERROR: Output stream opened");
+                            android.util.Log.e("NotePlusExport", "Starting data write, format: " + format);
+                            System.err.println("NotePlusExport ERROR: Starting data write, format: " + format);
+                            long startTime = System.currentTimeMillis();
                             // 写入数据
                             if (format.contains("CSV")) {
+                                android.util.Log.d("NotePlusExport", "Calling writeCsvData()");
                                 writeCsvData(outputStream);
                             } else {
+                                android.util.Log.d("NotePlusExport", "Calling writeJsonData()");
                                 writeJsonData(outputStream);
                             }
+                            long endTime = System.currentTimeMillis();
+                            android.util.Log.i("NotePlusExport", "Data write completed, elapsed time: " + (endTime - startTime) + "ms");
                             outputStream.close();
+                            android.util.Log.d("NotePlusExport", "Output stream closed");
+                            android.util.Log.i("NotePlusExport", "Data write completed successfully, file: " + fileName);
                             success = true;
+                        } else {
+                            android.util.Log.e("NotePlusExport", "Failed to open output stream, file URI: " + fileUri);
                         }
+                    } else {
+                        android.util.Log.e("NotePlusExport", "Failed to create file URI, file name: " + fileName);
+                        android.util.Log.e("NotePlusExport", "Possible reasons: insufficient permissions, storage full, path error");
                     }
                 } else {
                     // 使用传统文件存储 (Android 9 及以下)
+                    android.util.Log.i("NotePlusExport", "Using traditional file storage (Android 9 and below)");
                     File documentsFolder = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS);
+                    android.util.Log.d("NotePlusExport", "Documents folder path: " + documentsFolder.getAbsolutePath());
                     if (!documentsFolder.exists()) {
+                        android.util.Log.d("NotePlusExport", "Documents folder does not exist, creating it");
                         documentsFolder.mkdirs();
                     }
                     
                     File outputFile = new File(documentsFolder, fileName);
+                    android.util.Log.d("NotePlusExport", "Output file path: " + outputFile.getAbsolutePath());
+                    android.util.Log.d("NotePlusExport", "Opening FileOutputStream");
                     FileOutputStream fos = new FileOutputStream(outputFile);
                     
+                    android.util.Log.i("NotePlusExport", "Starting data write, format: " + format);
+                    long startTime = System.currentTimeMillis();
                     // 写入数据
                     if (format.contains("CSV")) {
+                        android.util.Log.d("NotePlusExport", "Calling writeCsvData()");
                         writeCsvData(fos);
                     } else {
+                        android.util.Log.d("NotePlusExport", "Calling writeJsonData()");
                         writeJsonData(fos);
                     }
+                    long endTime = System.currentTimeMillis();
+                    android.util.Log.i("NotePlusExport", "Data write completed, elapsed time: " + (endTime - startTime) + "ms");
                     
+                    android.util.Log.d("NotePlusExport", "Closing FileOutputStream");
                     fos.close();
                     fileUri = Uri.fromFile(outputFile);
+                    android.util.Log.i("NotePlusExport", "Data write completed successfully, file: " + outputFile.getAbsolutePath());
                     success = true;
                 }
                 
                 final Uri finalFileUri = fileUri;
                 final boolean finalSuccess = success;
                 
+                android.util.Log.e("NotePlusExport", "Export result: " + (finalSuccess ? "SUCCESS" : "FAILED"));
+                System.err.println("NotePlusExport ERROR: Export result: " + (finalSuccess ? "SUCCESS" : "FAILED"));
+                if (finalFileUri != null) {
+                    android.util.Log.e("NotePlusExport", "Final file URI: " + finalFileUri.toString());
+                    System.err.println("NotePlusExport ERROR: Final file URI: " + finalFileUri.toString());
+                }
+                
                 // 在UI线程中更新界面
                 runOnUiThread(() -> {
                     progressDialog.dismiss();
                     
                     if (finalSuccess) {
+                        android.util.Log.e("NotePlusExport", "Showing export success dialog");
+                        System.err.println("NotePlusExport ERROR: Showing export success dialog");
                         showExportSuccessDialog(format, finalFileUri);
                     } else {
+                        android.util.Log.e("NotePlusExport", "Showing export failure toast");
+                        System.err.println("NotePlusExport ERROR: Export FAILED");
                         Toast.makeText(MainActivity.this, "导出失败，请重试", Toast.LENGTH_SHORT).show();
                     }
                 });
                 
             } catch (Exception e) {
+                android.util.Log.e("NotePlusExport", "Export failed with exception: " + format, e);
+                android.util.Log.e("NotePlusExport", "Exception type: " + e.getClass().getName());
+                android.util.Log.e("NotePlusExport", "Exception message: " + (e.getMessage() != null ? e.getMessage() : "null"));
                 e.printStackTrace();
+                final String errorMsg = e.getMessage();
                 runOnUiThread(() -> {
                     progressDialog.dismiss();
-                    Toast.makeText(MainActivity.this, "导出错误: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    Toast.makeText(MainActivity.this, "导出错误: " + (errorMsg != null ? errorMsg : e.getClass().getSimpleName()), Toast.LENGTH_LONG).show();
                 });
             }
+            android.util.Log.i("NotePlusExport", "=== Export process ended ===");
         }).start();
     }
 
@@ -1900,11 +2017,18 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     private void showExportSuccessDialog(String format, Uri fileUri) {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("导出成功");
-        builder.setMessage("数据已成功导出为" + format + "格式");
+        builder.setMessage("数据已成功导出为" + format + "格式\n\n" +
+                          "位置: Documents文件夹\n\n" +
+                          "提示: 如果文件管理器中看不到，请：\n" +
+                          "1. 检查文件管理器设置，确保显示所有文件类型\n" +
+                          "2. 在Documents文件夹中查找\n" +
+                          "3. 使用 打开文 件按钮直接打开");
         
         builder.setPositiveButton("打开文件", (dialog, which) -> {
             Intent intent = new Intent(Intent.ACTION_VIEW);
-            intent.setDataAndType(fileUri, format.contains("CSV") ? "text/csv" : "application/json");
+            // JSON文件使用.json.txt后缀，MIME类型使用text/plain
+            String mimeType = format.contains("CSV") ? "text/csv" : "text/plain";
+            intent.setDataAndType(fileUri, mimeType);
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             
             try {
@@ -1912,6 +2036,13 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             } catch (ActivityNotFoundException e) {
                 Toast.makeText(this, "没有找到可以打开此类文件的应用", Toast.LENGTH_SHORT).show();
             }
+        });
+        
+        builder.setNeutralButton("复制URI", (dialog, which) -> {
+            android.content.ClipboardManager clipboard = (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            android.content.ClipData clip = android.content.ClipData.newPlainText("文件URI", fileUri.toString());
+            clipboard.setPrimaryClip(clip);
+            Toast.makeText(this, "文件URI已复制到剪贴板", Toast.LENGTH_SHORT).show();
         });
         
         builder.setNegativeButton("确定", null);
@@ -2218,7 +2349,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         closeButton.setOnClickListener(v -> dialog.dismiss());
 
         // 初始化时间范围选择器
-        String[] rangeOptions = {"最近1周", "最近2周", "最近1个月", "最近3个月"};
+        String[] rangeOptions = {"最近3天", "最近1周", "最近2周", "最近1个月", "最近3个月"};
         ArrayAdapter<String> rangeAdapter = new ArrayAdapter<>(this, 
             android.R.layout.simple_spinner_item, rangeOptions);
         rangeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
@@ -2226,7 +2357,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         
         // 读取用户偏好（默认顺序，即false）
         SharedPreferences prefs = getSharedPreferences(PREFS_TIMELINE, MODE_PRIVATE);
-        int savedRangePosition = prefs.getInt(KEY_TIMELINE_RANGE, 0); // 默认最近1周
+        int savedRangePosition = prefs.getInt(KEY_TIMELINE_RANGE, 1); // 默认最近1周（位置1，因为位置0现在是最近3天）
         boolean savedSortDescending = prefs.getBoolean(KEY_TIMELINE_SORT, false); // 默认顺序
         
         // 应用用户偏好
@@ -2688,26 +2819,87 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         // ListView在ScrollView中需要设置固定高度才能正确显示
         if (detailCommentList != null && commentListContainer != null) {
             dialogView.post(() -> {
-                // 等待ListView渲染完成后计算高度
+                // 等待对话框完全显示后再计算
                 detailCommentList.post(() -> {
-                    if (detailCommentList.getAdapter() != null && detailCommentList.getAdapter().getCount() > 0) {
-                        // 计算ListView的总高度
-                        int totalHeight = 0;
-                        int dividerHeight = detailCommentList.getDividerHeight();
-                        for (int i = 0; i < detailCommentList.getChildCount(); i++) {
-                            View child = detailCommentList.getChildAt(i);
-                            if (child != null) {
-                                totalHeight += child.getMeasuredHeight();
-                                if (i > 0) {
-                                    totalHeight += dividerHeight;
+                    if (detailCommentList.getAdapter() != null) {
+                        android.widget.BaseAdapter adapter = (android.widget.BaseAdapter) detailCommentList.getAdapter();
+                        int itemCount = adapter.getCount();
+                        
+                        if (itemCount > 0) {
+                            // 方法1：如果ListView已经渲染了所有子视图，直接计算
+                            int visibleChildCount = detailCommentList.getChildCount();
+                            if (visibleChildCount == itemCount) {
+                                // 所有项都已渲染，直接计算
+                                int totalHeight = 0;
+                                int dividerHeight = detailCommentList.getDividerHeight();
+                                for (int i = 0; i < visibleChildCount; i++) {
+                                    View child = detailCommentList.getChildAt(i);
+                                    if (child != null) {
+                                        totalHeight += child.getMeasuredHeight();
+                                        if (i > 0) {
+                                            totalHeight += dividerHeight;
+                                        }
+                                    }
+                                }
+                                // 加上ListView的padding
+                                totalHeight += detailCommentList.getPaddingTop() + detailCommentList.getPaddingBottom();
+                                
+                                if (totalHeight > 0) {
+                                    ViewGroup.LayoutParams params = detailCommentList.getLayoutParams();
+                                    if (params != null) {
+                                        params.height = totalHeight;
+                                        detailCommentList.setLayoutParams(params);
+                                    }
+                                }
+                            } else {
+                                // 方法2：手动测量每个item的高度
+                                int totalHeight = 0;
+                                int dividerHeight = detailCommentList.getDividerHeight();
+                                int itemWidth = detailCommentList.getWidth() - 
+                                               detailCommentList.getPaddingLeft() - 
+                                               detailCommentList.getPaddingRight();
+                                
+                                // 使用第一个可见项作为模板
+                                View templateView = null;
+                                if (detailCommentList.getChildCount() > 0) {
+                                    templateView = detailCommentList.getChildAt(0);
+                                } else {
+                                    // 如果没有可见项，创建一个临时视图来测量
+                                    templateView = adapter.getView(0, null, detailCommentList);
+                                }
+                                
+                                if (templateView != null) {
+                                    // 测量模板视图
+                                    int widthMeasureSpec = View.MeasureSpec.makeMeasureSpec(
+                                        itemWidth > 0 ? itemWidth : ViewGroup.LayoutParams.WRAP_CONTENT,
+                                        itemWidth > 0 ? View.MeasureSpec.EXACTLY : View.MeasureSpec.UNSPECIFIED);
+                                    int heightMeasureSpec = View.MeasureSpec.makeMeasureSpec(
+                                        0, View.MeasureSpec.UNSPECIFIED);
+                                    templateView.measure(widthMeasureSpec, heightMeasureSpec);
+                                    
+                                    int itemHeight = templateView.getMeasuredHeight();
+                                    
+                                    // 计算总高度
+                                    totalHeight = itemHeight * itemCount + dividerHeight * (itemCount - 1);
+                                    totalHeight += detailCommentList.getPaddingTop() + detailCommentList.getPaddingBottom();
+                                    
+                                    // 确保不小于minHeight
+                                    int minHeight = (int) (150 * getResources().getDisplayMetrics().density);
+                                    totalHeight = Math.max(totalHeight, minHeight);
+                                    
+                                    ViewGroup.LayoutParams params = detailCommentList.getLayoutParams();
+                                    if (params != null) {
+                                        params.height = totalHeight;
+                                        detailCommentList.setLayoutParams(params);
+                                    }
                                 }
                             }
-                        }
-                        // 如果计算出的高度大于0，设置ListView的高度
-                        if (totalHeight > 0) {
+                        } else {
+                            // 没有Comment时，使用最小高度
+                            int minHeight = (int) (150 * getResources().getDisplayMetrics().density);
                             ViewGroup.LayoutParams params = detailCommentList.getLayoutParams();
                             if (params != null) {
-                                params.height = totalHeight;
+                                params.height = minHeight;
                                 detailCommentList.setLayoutParams(params);
                             }
                         }
@@ -2781,12 +2973,14 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     private TimeRangeFilter getTimeRangeFromPosition(int position) {
         switch (position) {
             case 0:
-                return TimeRangeFilter.LAST_WEEK;      // 最近1周
+                return TimeRangeFilter.LAST_THREE_DAYS;  // 最近3天
             case 1:
-                return TimeRangeFilter.LAST_TWO_WEEKS;  // 最近2周
+                return TimeRangeFilter.LAST_WEEK;      // 最近1周
             case 2:
-                return TimeRangeFilter.LAST_MONTH;      // 最近1个月
+                return TimeRangeFilter.LAST_TWO_WEEKS;  // 最近2周
             case 3:
+                return TimeRangeFilter.LAST_MONTH;      // 最近1个月
+            case 4:
                 return TimeRangeFilter.LAST_THREE_MONTHS; // 最近3个月
             default:
                 return TimeRangeFilter.LAST_WEEK;
@@ -3233,7 +3427,8 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                 if(path != null){
                      if (path.endsWith(".csv")) {
                         pendingImportFormat = "CSV";
-                    } else if (path.endsWith(".json")) {
+                    } else if (path.endsWith(".json") || path.endsWith(".json.txt")) {
+                        // 支持 .json 和 .json.txt 两种后缀
                         pendingImportFormat = "JSON";
                     } else {
                          // Fallback for URIs that don't have a clear path extension
@@ -3243,8 +3438,16 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                          if (mimeType != null) {
                              if (mimeType.equals("text/csv") || mimeType.equals("text/comma-separated-values")) {
                                  pendingImportFormat = "CSV";
-                             } else if (mimeType.equals("application/json")) {
-                                 pendingImportFormat = "JSON";
+                             } else if (mimeType.equals("application/json") || mimeType.equals("text/plain")) {
+                                 // 支持 application/json 和 text/plain（.json.txt文件使用text/plain）
+                                 // 如果文件名以.json或.json.txt结尾，则认为是JSON格式
+                                 if (path.endsWith(".json") || path.endsWith(".json.txt")) {
+                                     pendingImportFormat = "JSON";
+                                 } else {
+                                     // 如果MIME类型是text/plain但文件名不是.json，可能需要进一步判断
+                                     // 这里默认认为是JSON（因为我们的导出文件使用text/plain）
+                                     pendingImportFormat = "JSON";
+                                 }
                              } else {
                                  Toast.makeText(this, "不支持的文件类型: " + mimeType, Toast.LENGTH_SHORT).show();
                                  return;
