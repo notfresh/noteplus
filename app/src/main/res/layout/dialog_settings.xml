@@ -191,4 +191,20 @@
             android:maxLength="5" />
     </LinearLayout>
 
+    <!-- 归档设置入口 -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="归档"
+        android:textStyle="bold"
+        android:textSize="16sp"
+        android:layout_marginTop="16dp" />
+
+    <Button
+        android:id="@+id/btnArchivedNotes"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="查看已归档"
+        android:layout_marginTop="8dp" />
+
 </LinearLayout> 

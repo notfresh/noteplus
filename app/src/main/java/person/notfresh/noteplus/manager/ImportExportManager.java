@@ -59,10 +59,17 @@ public class ImportExportManager {
         // 获取所有记录
         android.util.Log.d("NotePlusExport", "[writeJsonData] Querying notes from database");
         Cursor notesCursor = db.query(
-                NoteDbHelper.TABLE_NOTES,
-                new String[]{"_id", NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP, NoteDbHelper.COLUMN_COST},
-                null, null, null, null,
-                NoteDbHelper.COLUMN_TIMESTAMP + " DESC"
+            NoteDbHelper.TABLE_NOTES,
+            new String[]{
+                "_id",
+                NoteDbHelper.COLUMN_CONTENT,
+                NoteDbHelper.COLUMN_TIMESTAMP,
+                NoteDbHelper.COLUMN_COST,
+                NoteDbHelper.COLUMN_IS_ARCHIVED,
+                NoteDbHelper.COLUMN_ARCHIVED_AT
+            },
+            null, null, null, null,
+            NoteDbHelper.COLUMN_TIMESTAMP + " DESC"
         );
         
         int noteCount = notesCursor.getCount();
@@ -82,11 +89,25 @@ public class ImportExportManager {
             String content = notesCursor.getString(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_CONTENT));
             long timestamp = notesCursor.getLong(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TIMESTAMP));
             double cost = notesCursor.getDouble(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COST));
+            int isArchived = 0;
+            long archivedAt = 0;
+            int archivedIndex = notesCursor.getColumnIndex(NoteDbHelper.COLUMN_IS_ARCHIVED);
+            if (archivedIndex >= 0) {
+                isArchived = notesCursor.getInt(archivedIndex);
+            }
+            int archivedAtIndex = notesCursor.getColumnIndex(NoteDbHelper.COLUMN_ARCHIVED_AT);
+            if (archivedAtIndex >= 0) {
+                archivedAt = notesCursor.getLong(archivedAtIndex);
+            }
             
             noteObject.put("id", noteId);
             noteObject.put("content", content);
             noteObject.put("timestamp", sdf.format(new Date(timestamp)));
             noteObject.put("cost", cost);
+            noteObject.put("archived", isArchived == 1);
+            if (archivedAt > 0) {
+                noteObject.put("archivedAt", sdf.format(new Date(archivedAt)));
+            }
             
             // 获取时间范围
             android.util.Log.d("NotePlusExport", "[writeJsonData] Fetching time ranges for note " + noteId);
@@ -196,10 +217,17 @@ public class ImportExportManager {
         // 获取所有记录
         android.util.Log.d("NotePlusExport", "[writeCsvData] Querying notes from database");
         Cursor notesCursor = db.query(
-                NoteDbHelper.TABLE_NOTES,
-                new String[]{"_id", NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP, NoteDbHelper.COLUMN_COST},
-                null, null, null, null,
-                NoteDbHelper.COLUMN_TIMESTAMP + " DESC"
+            NoteDbHelper.TABLE_NOTES,
+            new String[]{
+                "_id",
+                NoteDbHelper.COLUMN_CONTENT,
+                NoteDbHelper.COLUMN_TIMESTAMP,
+                NoteDbHelper.COLUMN_COST,
+                NoteDbHelper.COLUMN_IS_ARCHIVED,
+                NoteDbHelper.COLUMN_ARCHIVED_AT
+            },
+            null, null, null, null,
+            NoteDbHelper.COLUMN_TIMESTAMP + " DESC"
         );
         
         int noteCount = notesCursor.getCount();
@@ -227,10 +255,10 @@ public class ImportExportManager {
         
         if (hasComments) {
             // 新格式：带类型列
-            writer.write("类型,笔记ID,评论ID,父评论ID,内容,时间戳,花费,开始时间,结束时间,标签\n");
+            writer.write("类型,笔记ID,评论ID,父评论ID,内容,时间戳,花费,开始时间,结束时间,标签,归档,归档时间\n");
         } else {
             // 旧格式：兼容原有格式
-            writer.write("ID,内容,时间戳,花费,开始时间,结束时间,标签\n");
+            writer.write("ID,内容,时间戳,花费,开始时间,结束时间,标签,归档,归档时间\n");
         }
         
         // 写入记录
@@ -242,6 +270,16 @@ public class ImportExportManager {
             String content = notesCursor.getString(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_CONTENT));
             long timestamp = notesCursor.getLong(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TIMESTAMP));
             double cost = notesCursor.getDouble(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COST));
+            int isArchived = 0;
+            long archivedAt = 0;
+            int archivedIndex = notesCursor.getColumnIndex(NoteDbHelper.COLUMN_IS_ARCHIVED);
+            if (archivedIndex >= 0) {
+                isArchived = notesCursor.getInt(archivedIndex);
+            }
+            int archivedAtIndex = notesCursor.getColumnIndex(NoteDbHelper.COLUMN_ARCHIVED_AT);
+            if (archivedAtIndex >= 0) {
+                archivedAt = notesCursor.getLong(archivedAtIndex);
+            }
             
             // 处理CSV中的特殊字符
             String escapedContent = "\"" + content.replace("\"", "\"\"") + "\"";
@@ -270,6 +308,8 @@ public class ImportExportManager {
             tagsCursor.close();
             String tagsStr = "\"" + tags.toString() + "\"";
             
+            String archivedAtStr = archivedAt > 0 ? sdf.format(new Date(archivedAt)) : "";
+
             if (hasComments) {
                 // 新格式：先写笔记行
                 StringBuilder noteLine = new StringBuilder();
@@ -282,7 +322,9 @@ public class ImportExportManager {
                 noteLine.append(cost).append(",");
                 noteLine.append(startTimeStr).append(",");
                 noteLine.append(endTimeStr).append(",");
-                noteLine.append(tagsStr);
+                noteLine.append(tagsStr).append(",");
+                noteLine.append(isArchived).append(",");
+                noteLine.append(archivedAtStr);
                 writer.write(noteLine.toString() + "\n");
                 
                 // 再写评论行
@@ -314,6 +356,8 @@ public class ImportExportManager {
                     commentLine.append(","); // 开始时间为空
                     commentLine.append(","); // 结束时间为空
                     commentLine.append("\"\""); // 标签为空
+                    commentLine.append(","); // 归档为空
+                    commentLine.append(""); // 归档时间为空
                     writer.write(commentLine.toString() + "\n");
                 }
                 commentsCursor.close();
@@ -326,7 +370,9 @@ public class ImportExportManager {
                 line.append(cost).append(",");
                 line.append(startTimeStr).append(",");
                 line.append(endTimeStr).append(",");
-                line.append(tagsStr);
+                line.append(tagsStr).append(",");
+                line.append(isArchived).append(",");
+                line.append(archivedAtStr);
                 writer.write(line.toString() + "\n");
             }
         }
@@ -390,6 +436,17 @@ public class ImportExportManager {
                         noteValues.put(NoteDbHelper.COLUMN_COST, cost);
                     }
                     
+                    // 处理归档信息
+                    boolean archived = noteObject.optBoolean("archived", false);
+                    noteValues.put(NoteDbHelper.COLUMN_IS_ARCHIVED, archived ? 1 : 0);
+                    if (archived && noteObject.has("archivedAt")) {
+                        String archivedAtStr = noteObject.getString("archivedAt");
+                        long archivedAt = sdf.parse(archivedAtStr).getTime();
+                        noteValues.put(NoteDbHelper.COLUMN_ARCHIVED_AT, archivedAt);
+                    } else {
+                        noteValues.put(NoteDbHelper.COLUMN_ARCHIVED_AT, 0);
+                    }
+
                     long newNoteId = db.insert(NoteDbHelper.TABLE_NOTES, null, noteValues);
                     
                     // 处理时间范围
@@ -554,7 +611,43 @@ public class ImportExportManager {
                                     noteValues.put(NoteDbHelper.COLUMN_COST, 0.0);
                                 }
                             }
+
+                            // 归档字段（新格式扩展列）
+                            if (fields.length > 10 && !fields[10].isEmpty()) {
+                                try {
+                                    int isArchived = Integer.parseInt(fields[10]);
+                                    noteValues.put(NoteDbHelper.COLUMN_IS_ARCHIVED, isArchived);
+                                } catch (NumberFormatException e) {
+                                    noteValues.put(NoteDbHelper.COLUMN_IS_ARCHIVED, 0);
+                                }
+                            }
+                            if (fields.length > 11 && !fields[11].isEmpty()) {
+                                try {
+                                    long archivedAt = sdf.parse(fields[11]).getTime();
+                                    noteValues.put(NoteDbHelper.COLUMN_ARCHIVED_AT, archivedAt);
+                                } catch (Exception e) {
+                                    noteValues.put(NoteDbHelper.COLUMN_ARCHIVED_AT, 0);
+                                }
+                            }
                             
+                            // 归档字段（旧格式扩展列）
+                            if (fields.length > 7 && !fields[7].isEmpty()) {
+                                try {
+                                    int isArchived = Integer.parseInt(fields[7]);
+                                    noteValues.put(NoteDbHelper.COLUMN_IS_ARCHIVED, isArchived);
+                                } catch (NumberFormatException e) {
+                                    noteValues.put(NoteDbHelper.COLUMN_IS_ARCHIVED, 0);
+                                }
+                            }
+                            if (fields.length > 8 && !fields[8].isEmpty()) {
+                                try {
+                                    long archivedAt = sdf.parse(fields[8]).getTime();
+                                    noteValues.put(NoteDbHelper.COLUMN_ARCHIVED_AT, archivedAt);
+                                } catch (Exception e) {
+                                    noteValues.put(NoteDbHelper.COLUMN_ARCHIVED_AT, 0);
+                                }
+                            }
+
                             long newNoteId = db.insert(NoteDbHelper.TABLE_NOTES, null, noteValues);
                             noteIdMap.put(oldNoteId, newNoteId);
                             

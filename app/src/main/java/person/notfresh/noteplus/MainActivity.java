@@ -2244,6 +2244,10 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         EditText foldDisplayLengthEdit = settingsView.findViewById(R.id.editTextFoldDisplayLength);
         String currentFoldLength = dbHelper.getSetting(NoteDbHelper.KEY_FOLD_DISPLAY_LENGTH, "300");
         foldDisplayLengthEdit.setText(currentFoldLength);
+
+        // 已归档入口（项目设置内）
+        Button archivedNotesButton = settingsView.findViewById(R.id.btnArchivedNotes);
+        archivedNotesButton.setOnClickListener(v -> showArchivedNotesDialog());
         
         // 保存按钮点击事件处理
         builder.setPositiveButton("保存", (dialog, which) -> {
@@ -2323,6 +2327,100 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         builder.setNegativeButton("取消", null);
         
         builder.show();
+    }
+
+    /**
+     * 显示已归档笔记列表（项目设置入口）
+     */
+    private void showArchivedNotesDialog() {
+        if (dbHelper == null) {
+            Toast.makeText(this, "数据库未初始化", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        Cursor archivedCursor = dbHelper.loadArchivedNotes(true);
+        if (archivedCursor == null || archivedCursor.getCount() == 0) {
+            if (archivedCursor != null) {
+                archivedCursor.close();
+            }
+            Toast.makeText(this, "暂无已归档记录", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        View dialogView = getLayoutInflater().inflate(R.layout.dialog_archived_notes, null);
+        builder.setView(dialogView);
+
+        TextView itemCountText = dialogView.findViewById(R.id.archivedItemCount);
+        ListView listView = dialogView.findViewById(R.id.archivedNotesListView);
+        Button closeButton = dialogView.findViewById(R.id.btnCloseArchived);
+
+        itemCountText.setText(archivedCursor.getCount() + " 项");
+
+        SimpleCursorAdapter adapter = new SimpleCursorAdapter(
+                this,
+                android.R.layout.simple_list_item_2,
+                archivedCursor,
+                new String[]{NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_ARCHIVED_AT},
+                new int[]{android.R.id.text1, android.R.id.text2},
+                0
+        );
+
+        adapter.setViewBinder((view, cursor, columnIndex) -> {
+            if (view.getId() == android.R.id.text2) {
+                long archivedAt = cursor.getLong(columnIndex);
+                String timeText = archivedAt > 0
+                        ? "归档时间：" + DisplayUtil.formatTimestamp(archivedAt)
+                        : "归档时间：未知";
+                ((TextView) view).setText(timeText);
+                return true;
+            }
+            return false;
+        });
+
+        listView.setAdapter(adapter);
+
+        AlertDialog dialog = builder.create();
+
+        // 长按还原
+        listView.setOnItemLongClickListener((parent, view, position, id) -> {
+            long noteId = id;
+            new AlertDialog.Builder(this)
+                    .setTitle("还原归档")
+                    .setMessage("确定要还原这条记录吗？")
+                    .setPositiveButton("还原", (d, which) -> {
+                        boolean success = dbHelper.restoreArchivedNote(noteId);
+                        if (success) {
+                            Toast.makeText(this, "已还原", Toast.LENGTH_SHORT).show();
+
+                            // 刷新主列表
+                            if (noteListManager != null) {
+                                noteListManager.loadNotes();
+                            }
+
+                            // 刷新归档列表
+                            Cursor newCursor = dbHelper.loadArchivedNotes(true);
+                            itemCountText.setText(newCursor.getCount() + " 项");
+                            adapter.changeCursor(newCursor);
+                        } else {
+                            Toast.makeText(this, "还原失败", Toast.LENGTH_SHORT).show();
+                        }
+                    })
+                    .setNegativeButton("取消", null)
+                    .show();
+            return true;
+        });
+
+        closeButton.setOnClickListener(v -> dialog.dismiss());
+
+        dialog.setOnDismissListener(d -> {
+            Cursor cursor = adapter.getCursor();
+            if (cursor != null && !cursor.isClosed()) {
+                cursor.close();
+            }
+        });
+
+        dialog.show();
     }
 
     /**

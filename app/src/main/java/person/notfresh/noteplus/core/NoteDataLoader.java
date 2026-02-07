@@ -105,7 +105,8 @@ public class NoteDataLoader {
         List<Comment> timeline = new ArrayList<>();
         
         // 1. 查询时间范围内的所有 Note，转换为 Comment
-        String noteSelection = NoteDbHelper.COLUMN_TIMESTAMP + " >= ?";
+        String noteSelection = NoteDbHelper.COLUMN_TIMESTAMP + " >= ? AND " +
+            NoteDbHelper.COLUMN_IS_ARCHIVED + " = 0";
         String[] noteSelectionArgs = new String[]{String.valueOf(startTime)};
         
         Cursor notesCursor = null;
@@ -182,27 +183,24 @@ public class NoteDataLoader {
         }
         
         // 2. 查询时间范围内的所有 Comment
-        String commentSelection = NoteDbHelper.COLUMN_COMMENT_TIMESTAMP + " >= ?";
+        String commentSelection = "c." + NoteDbHelper.COLUMN_COMMENT_TIMESTAMP + " >= ?";
         String[] commentSelectionArgs = new String[]{String.valueOf(startTime)};
         
         Cursor commentsCursor = null;
         try {
-            // 尝试查询 Comment 表
-            commentsCursor = db.query(
-                NoteDbHelper.TABLE_NOTE_COMMENTS,
-                new String[]{
-                    NoteDbHelper.COLUMN_COMMENT_ID,
-                    NoteDbHelper.COLUMN_COMMENT_NOTE_ID,
-                    NoteDbHelper.COLUMN_PARENT_COMMENT_ID,
-                    NoteDbHelper.COLUMN_COMMENT_CONTENT,
-                    NoteDbHelper.COLUMN_COMMENT_TIMESTAMP,
-                    NoteDbHelper.COLUMN_COMMENT_COST
-                },
-                commentSelection,
-                commentSelectionArgs,
-                null, null,
-                null  // 不在这里排序，后面统一排序
-        );
+            // 使用 JOIN 过滤归档笔记的评论
+                String commentsQuery = "SELECT c." + NoteDbHelper.COLUMN_COMMENT_ID + ", " +
+                    "c." + NoteDbHelper.COLUMN_COMMENT_NOTE_ID + ", " +
+                    "c." + NoteDbHelper.COLUMN_PARENT_COMMENT_ID + ", " +
+                    "c." + NoteDbHelper.COLUMN_COMMENT_CONTENT + ", " +
+                    "c." + NoteDbHelper.COLUMN_COMMENT_TIMESTAMP + ", " +
+                    "c." + NoteDbHelper.COLUMN_COMMENT_COST +
+                    " FROM " + NoteDbHelper.TABLE_NOTE_COMMENTS + " c" +
+                    " INNER JOIN " + NoteDbHelper.TABLE_NOTES + " n" +
+                    " ON c." + NoteDbHelper.COLUMN_COMMENT_NOTE_ID + " = n." + NoteDbHelper.COLUMN_ID +
+                    " WHERE " + commentSelection +
+                    " AND n." + NoteDbHelper.COLUMN_IS_ARCHIVED + " = 0";
+            commentsCursor = db.rawQuery(commentsQuery, commentSelectionArgs);
         } catch (android.database.sqlite.SQLiteException e) {
             // 如果查询失败（可能是 note_comments 表不存在），记录警告并跳过
             android.util.Log.w("Timeline", "Timeline: 查询 Comment 表失败，可能表不存在: " + e.getMessage());
@@ -319,8 +317,9 @@ public class NoteDataLoader {
         calendar.add(Calendar.DAY_OF_YEAR, -timeRange.getDays());
         long startTime = calendar.getTimeInMillis();
         
-        // 构建查询条件：timestamp >= startTime
-        String selection = NoteDbHelper.COLUMN_TIMESTAMP + " >= ?";
+        // 构建查询条件：timestamp >= startTime AND not archived
+        String selection = NoteDbHelper.COLUMN_TIMESTAMP + " >= ? AND " +
+            NoteDbHelper.COLUMN_IS_ARCHIVED + " = 0";
         String[] selectionArgs = new String[]{String.valueOf(startTime)};
         
         // 排序：置顶的记录排在最前面，然后按时间逆序（最新的最前面）

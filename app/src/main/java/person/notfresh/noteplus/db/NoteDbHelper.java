@@ -8,7 +8,7 @@ import android.content.ContentValues;
 
 public class NoteDbHelper extends SQLiteOpenHelper {
     private static final String DATABASE_NAME = "notes.db";
-    private static final int DATABASE_VERSION = 7;
+    private static final int DATABASE_VERSION = 8;
 
     public static final String TABLE_NOTES = "notes";
     public static final String COLUMN_ID = "_id";
@@ -16,6 +16,8 @@ public class NoteDbHelper extends SQLiteOpenHelper {
     public static final String COLUMN_TIMESTAMP = "timestamp";
     public static final String COLUMN_COST = "cost";
     public static final String COLUMN_IS_PINNED = "is_pinned";
+    public static final String COLUMN_IS_ARCHIVED = "is_archived";
+    public static final String COLUMN_ARCHIVED_AT = "archived_at";
 
     public static final String TABLE_TAGS = "tags";
     public static final String TABLE_TIME_RANGES = "time_ranges";
@@ -57,7 +59,9 @@ public class NoteDbHelper extends SQLiteOpenHelper {
             + COLUMN_CONTENT + " text not null, "
             + COLUMN_TIMESTAMP + " integer not null, "
             + COLUMN_COST + " real default 0, "
-            + COLUMN_IS_PINNED + " integer default 0);";
+            + COLUMN_IS_PINNED + " integer default 0, "
+            + COLUMN_IS_ARCHIVED + " integer default 0, "
+            + COLUMN_ARCHIVED_AT + " integer default 0);";
 
     public NoteDbHelper(Context context, String databaseName) {
         super(context, databaseName, null, DATABASE_VERSION);
@@ -230,6 +234,20 @@ public class NoteDbHelper extends SQLiteOpenHelper {
             // 添加置顶字段
             try {
                 db.execSQL("ALTER TABLE " + TABLE_NOTES + " ADD COLUMN " + COLUMN_IS_PINNED + " INTEGER DEFAULT 0");
+            } catch (Exception e) {
+                // 如果字段已存在，忽略错误
+            }
+        }
+
+        if (oldVersion < 8) {
+            // 添加归档字段
+            try {
+                db.execSQL("ALTER TABLE " + TABLE_NOTES + " ADD COLUMN " + COLUMN_IS_ARCHIVED + " INTEGER DEFAULT 0");
+            } catch (Exception e) {
+                // 如果字段已存在，忽略错误
+            }
+            try {
+                db.execSQL("ALTER TABLE " + TABLE_NOTES + " ADD COLUMN " + COLUMN_ARCHIVED_AT + " INTEGER DEFAULT 0");
             } catch (Exception e) {
                 // 如果字段已存在，忽略错误
             }
@@ -666,11 +684,108 @@ public class NoteDbHelper extends SQLiteOpenHelper {
                     NoteDbHelper.COLUMN_COST, 
                     NoteDbHelper.COLUMN_IS_PINNED
                 },
-                null, null, null, null,
+                NoteDbHelper.COLUMN_IS_ARCHIVED + " = 0", null, null, null,
                 orderBy
         );
         
         return cursor;
+    }
+
+    /**
+     * 加载归档笔记数据（按归档时间倒序）
+     * 
+     * @return 包含归档笔记数据的Cursor
+     */
+    public Cursor loadArchivedNotes() {
+        return loadArchivedNotes(true);
+    }
+
+    /**
+     * 加载归档笔记数据
+     * 
+     * @param archivedTimeDesc true表示按归档时间倒序，false表示正序
+     * @return 包含归档笔记数据的Cursor
+     */
+    public Cursor loadArchivedNotes(boolean archivedTimeDesc) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        String orderBy = NoteDbHelper.COLUMN_ARCHIVED_AT + (archivedTimeDesc ? " DESC" : " ASC");
+        return db.query(
+                NoteDbHelper.TABLE_NOTES,
+                new String[]{
+                    "_id",
+                    NoteDbHelper.COLUMN_CONTENT,
+                    NoteDbHelper.COLUMN_TIMESTAMP,
+                    NoteDbHelper.COLUMN_COST,
+                    NoteDbHelper.COLUMN_IS_PINNED,
+                    NoteDbHelper.COLUMN_ARCHIVED_AT
+                },
+                NoteDbHelper.COLUMN_IS_ARCHIVED + " = 1",
+                null, null, null,
+                orderBy
+        );
+    }
+
+    /**
+     * 归档笔记
+     * @param noteId 笔记ID
+     * @return 是否成功
+     */
+    public boolean archiveNote(long noteId) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put(COLUMN_IS_ARCHIVED, 1);
+        values.put(COLUMN_ARCHIVED_AT, System.currentTimeMillis());
+        int rowsAffected = db.update(
+                TABLE_NOTES,
+                values,
+                COLUMN_ID + "=?",
+                new String[]{String.valueOf(noteId)}
+        );
+        return rowsAffected > 0;
+    }
+
+    /**
+     * 还原归档笔记
+     * @param noteId 笔记ID
+     * @return 是否成功
+     */
+    public boolean restoreArchivedNote(long noteId) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put(COLUMN_IS_ARCHIVED, 0);
+        values.put(COLUMN_ARCHIVED_AT, 0);
+        int rowsAffected = db.update(
+                TABLE_NOTES,
+                values,
+                COLUMN_ID + "=?",
+                new String[]{String.valueOf(noteId)}
+        );
+        return rowsAffected > 0;
+    }
+
+    /**
+     * 判断笔记是否已归档
+     * @param noteId 笔记ID
+     * @return true表示已归档，false表示未归档
+     */
+    public boolean isNoteArchived(long noteId) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        Cursor cursor = db.query(
+                TABLE_NOTES,
+                new String[]{COLUMN_IS_ARCHIVED},
+                COLUMN_ID + "=?",
+                new String[]{String.valueOf(noteId)},
+                null, null, null
+        );
+        boolean archived = false;
+        if (cursor != null && cursor.moveToFirst()) {
+            int archivedIndex = cursor.getColumnIndex(COLUMN_IS_ARCHIVED);
+            if (archivedIndex != -1) {
+                archived = cursor.getInt(archivedIndex) == 1;
+            }
+            cursor.close();
+        }
+        return archived;
     }
     
     /**

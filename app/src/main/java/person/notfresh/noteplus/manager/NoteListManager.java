@@ -1427,7 +1427,7 @@ public class NoteListManager {
         
         // 检查当前置顶状态
         boolean isPinned = dbHelper.isNotePinned(noteId);
-        String[] options = {"复制到剪切板", "追加内容", isPinned ? "取消置顶" : "置顶", "合并到...", "删除"};
+        String[] options = {"复制到剪切板", "追加内容", isPinned ? "取消置顶" : "置顶", "合并到...", "归档", "删除"};
         
         builder.setItems(options, (dialog, which) -> {
             switch (which) {
@@ -1443,7 +1443,10 @@ public class NoteListManager {
                 case 3: // 合并到...
                     showMergeToDialog(noteId);
                     break;
-                case 4: // 删除
+                case 4: // 归档
+                    showArchiveConfirmDialog(noteId);
+                    break;
+                case 5: // 删除
                     showDeleteConfirmDialog(noteId);
                     break;
             }
@@ -1456,6 +1459,53 @@ public class NoteListManager {
         Window window = dialog.getWindow();
         if (window != null) {
             window.setGravity(Gravity.CENTER);
+        }
+    }
+
+    /**
+     * 显示归档确认对话框
+     * @param noteId 笔记ID
+     */
+    private void showArchiveConfirmDialog(long noteId) {
+        if (callback == null) {
+            return;
+        }
+
+        Context context = callback.getContext();
+        if (context == null) {
+            return;
+        }
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(context);
+        builder.setTitle("归档记录");
+        builder.setMessage("确定要归档这条记录吗？归档后可在设置-已归档中查看。");
+
+        builder.setPositiveButton("归档", (dialog, which) -> archiveNote(noteId));
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
+
+    /**
+     * 归档笔记
+     * @param noteId 笔记ID
+     */
+    private void archiveNote(long noteId) {
+        if (callback == null) {
+            return;
+        }
+
+        NoteDbHelper dbHelper = callback.getDbHelper();
+        Context context = callback.getContext();
+        if (dbHelper == null || context == null) {
+            return;
+        }
+
+        boolean success = dbHelper.archiveNote(noteId);
+        if (success) {
+            Toast.makeText(context, "已归档", Toast.LENGTH_SHORT).show();
+            loadNotes();
+        } else {
+            Toast.makeText(context, "归档失败", Toast.LENGTH_SHORT).show();
         }
     }
     
