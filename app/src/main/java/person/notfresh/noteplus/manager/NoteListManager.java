@@ -1427,7 +1427,7 @@ public class NoteListManager {
         
         // 检查当前置顶状态
         boolean isPinned = dbHelper.isNotePinned(noteId);
-        String[] options = {"复制到剪切板", "追加内容", isPinned ? "取消置顶" : "置顶", "合并到...", "归档", "删除"};
+        String[] options = {"复制到剪切板", "追加内容", isPinned ? "取消置顶" : "置顶", "合并到...", "移动到...", "归档", "删除"};
         
         builder.setItems(options, (dialog, which) -> {
             switch (which) {
@@ -1443,10 +1443,15 @@ public class NoteListManager {
                 case 3: // 合并到...
                     showMergeToDialog(noteId);
                     break;
-                case 4: // 归档
+                case 4: // 移动到...
+                    if (callback != null) {
+                        callback.onRequestMoveToProject(noteId);
+                    }
+                    break;
+                case 5: // 归档
                     showArchiveConfirmDialog(noteId);
                     break;
-                case 5: // 删除
+                case 6: // 删除
                     showDeleteConfirmDialog(noteId);
                     break;
             }

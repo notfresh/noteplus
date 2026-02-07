@@ -2366,7 +2366,30 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                 0
         );
 
+        // 读取折叠显示字数配置
+        int foldLength;
+        try {
+            foldLength = Integer.parseInt(dbHelper.getSetting(NoteDbHelper.KEY_FOLD_DISPLAY_LENGTH, "300"));
+            if (foldLength < 1) {
+                foldLength = 1;
+            }
+        } catch (Exception e) {
+            foldLength = 300;
+        }
+
+        int finalFoldLength = foldLength;
         adapter.setViewBinder((view, cursor, columnIndex) -> {
+            if (view.getId() == android.R.id.text1) {
+                String content = cursor.getString(columnIndex);
+                if (content == null) {
+                    content = "";
+                }
+                if (content.length() > finalFoldLength) {
+                    content = content.substring(0, finalFoldLength) + "...";
+                }
+                ((TextView) view).setText(content);
+                return true;
+            }
             if (view.getId() == android.R.id.text2) {
                 long archivedAt = cursor.getLong(columnIndex);
                 String timeText = archivedAt > 0
@@ -2381,6 +2404,16 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         listView.setAdapter(adapter);
 
         AlertDialog dialog = builder.create();
+
+        // 点击查看详情（包含评论）
+        listView.setOnItemClickListener((parent, view, position, id) -> {
+            String projectName = projectManager != null ? projectManager.getCurrentProject() : null;
+            if (projectName == null || projectName.isEmpty()) {
+                Toast.makeText(this, "项目无效", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            loadNoteDetail(id, projectName);
+        });
 
         // 长按还原
         listView.setOnItemLongClickListener((parent, view, position, id) -> {
@@ -4056,6 +4089,13 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                                         }
                                     }
                                     commentsCursor.close();
+
+                                    // 5.1 删除源项目的评论
+                                    sourceDb.delete(
+                                            NoteDbHelper.TABLE_NOTE_COMMENTS,
+                                            NoteDbHelper.COLUMN_COMMENT_NOTE_ID + " = ?",
+                                            new String[]{String.valueOf(noteId)}
+                                    );
                                     
                                     // 6. 从源数据库删除记录
                                     sourceDb.delete(NoteDbHelper.TABLE_NOTES, "_id = ?", new String[]{String.valueOf(noteId)});
@@ -4167,5 +4207,16 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     @Override
     public void onRequestRefreshMenu() {
         invalidateOptionsMenu();
+    }
+
+    @Override
+    public void onRequestMoveToProject(long noteId) {
+        if (selectedNoteIds == null) {
+            selectedNoteIds = new HashSet<>();
+        } else {
+            selectedNoteIds.clear();
+        }
+        selectedNoteIds.add(noteId);
+        showMoveToProjectDialog();
     }
 }

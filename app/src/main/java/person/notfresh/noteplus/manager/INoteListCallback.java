@@ -68,5 +68,11 @@ public interface INoteListCallback {
      * 当多选状态变化时，需要刷新菜单显示
      */
     void onRequestRefreshMenu();
+
+    /**
+     * 请求移动单条笔记到其他项目
+     * @param noteId 笔记ID
+     */
+    void onRequestMoveToProject(long noteId);
 }
 
