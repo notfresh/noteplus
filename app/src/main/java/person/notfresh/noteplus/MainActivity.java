@@ -4129,11 +4129,12 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                         }
                         Toast.makeText(this, message, Toast.LENGTH_LONG).show();
                         
-                        // 退出多选模式并刷新列表
+                        // 退出多选模式并隐藏已移动项（不重新查询）
+                        Set<Long> movedIds = new HashSet<>(selectedNoteIds);
                         exitMultiSelectMode();
                         if (noteListManager != null) {
-                noteListManager.loadNotes();
-            }
+                            noteListManager.hideNotes(movedIds);
+                        }
                     });
                     
                 } finally {

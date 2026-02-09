@@ -56,6 +56,7 @@ public class NoteListManager {
     private NoteListAdapter adapter;
     private Set<Long> foldedNoteIds = new HashSet<>();
     private Set<Long> expandedComments = new HashSet<>();
+    private Set<Long> hiddenNoteIds = new HashSet<>();
     private boolean isMultiSelectMode = false;
     private Set<Long> selectedNoteIds = new HashSet<>();
     
@@ -91,6 +92,8 @@ public class NoteListManager {
         }
         
         try {
+            // 重新加载时清理隐藏列表
+            hiddenNoteIds.clear();
             // 先关闭之前的 Cursor 包装器（如果存在）
             if (noteCursorWrapper != null) {
                 noteCursorWrapper.close();
@@ -182,7 +185,39 @@ public class NoteListManager {
     public void refreshNotes() {
         loadNotes();
     }
-    
+
+    /**
+     * 隐藏指定笔记（不重新查询）
+     * 用于移动后让列表自然上移
+     * @param noteIds 需要隐藏的笔记ID集合
+     */
+    public void hideNotes(Set<Long> noteIds) {
+        if (noteIds == null || noteIds.isEmpty() || adapter == null || listView == null) {
+            return;
+        }
+
+        // 保存当前滚动位置
+        int firstVisiblePosition = listView.getFirstVisiblePosition();
+        View firstVisibleView = listView.getChildAt(0);
+        int scrollOffset = 0;
+        if (firstVisibleView != null) {
+            scrollOffset = firstVisibleView.getTop();
+        }
+
+        hiddenNoteIds.addAll(noteIds);
+        adapter.markVisiblePositionsDirty();
+        adapter.notifyDataSetChanged();
+
+        // 恢复滚动位置
+        if (firstVisiblePosition >= 0) {
+            int adjustedPosition = firstVisiblePosition;
+            if (adjustedPosition >= adapter.getCount()) {
+                adjustedPosition = Math.max(0, adapter.getCount() - 1);
+            }
+            listView.setSelectionFromTop(adjustedPosition, scrollOffset);
+        }
+    }
+
     /**
      * 切换项目
      * 当项目切换时，需要重新加载数据
@@ -400,6 +435,7 @@ public class NoteListManager {
                 noteCursorWrapper.setCursor(newCursor);
                 // 刷新适配器，ListView 会自动移除不存在的项，下面的项会自动浮上来
                 if (adapter != null) {
+                    adapter.markVisiblePositionsDirty();
                     adapter.notifyDataSetChanged();
                     // 恢复滚动位置
                     if (firstVisiblePosition >= 0) {
@@ -1508,7 +1544,9 @@ public class NoteListManager {
         boolean success = dbHelper.archiveNote(noteId);
         if (success) {
             Toast.makeText(context, "已归档", Toast.LENGTH_SHORT).show();
-            loadNotes();
+            Set<Long> archivedIds = new HashSet<>();
+            archivedIds.add(noteId);
+            hideNotes(archivedIds);
         } else {
             Toast.makeText(context, "归档失败", Toast.LENGTH_SHORT).show();
         }
@@ -1890,19 +1928,55 @@ public class NoteListManager {
      */
     private class NoteListAdapter extends BaseAdapter {
         private final NoteCursorWrapper wrapper;
+        private final List<Integer> visiblePositions = new ArrayList<>();
+        private boolean visiblePositionsDirty = true;
         
         public NoteListAdapter(NoteCursorWrapper wrapper) {
             this.wrapper = wrapper;
         }
+
+        private void rebuildVisiblePositions() {
+            visiblePositions.clear();
+            if (wrapper == null) {
+                visiblePositionsDirty = false;
+                return;
+            }
+
+            int total = wrapper.getCount();
+            for (int i = 0; i < total; i++) {
+                long noteId = wrapper.getNoteIdAtPosition(i);
+                if (!hiddenNoteIds.contains(noteId)) {
+                    visiblePositions.add(i);
+                }
+            }
+            visiblePositionsDirty = false;
+        }
+
+        public void markVisiblePositionsDirty() {
+            visiblePositionsDirty = true;
+        }
         
         @Override
         public int getCount() {
-            return wrapper != null ? wrapper.getCount() : 0;
+            if (visiblePositionsDirty) {
+                rebuildVisiblePositions();
+            }
+            return visiblePositions.size();
         }
         
         @Override
         public Note getItem(int position) {
-            return wrapper != null ? wrapper.getNote(position) : null;
+            if (wrapper == null) {
+                return null;
+            }
+            if (visiblePositionsDirty) {
+                rebuildVisiblePositions();
+            }
+            if (position < 0 || position >= visiblePositions.size()) {
+                return null;
+            }
+            int cursorPosition = visiblePositions.get(position);
+            return wrapper.getNote(cursorPosition);
         }
         
         @Override

@@ -71,6 +71,16 @@ public class NoteCursorWrapper {
         noteCache.put(position, note);
         return note;
     }
+
+    /**
+     * 获取指定位置的 Note ID（不创建Note对象）
+     * @param position 位置索引
+     * @return Note ID
+     */
+    public long getNoteIdAtPosition(int position) {
+        cursor.moveToPosition(position);
+        return cursor.getLong(idIndex);
+    }
     
     /**
      * 获取总数
