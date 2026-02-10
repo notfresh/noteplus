@@ -27,6 +27,8 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Color;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -48,6 +50,7 @@ import android.view.Gravity;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.ScrollView;
@@ -60,6 +63,7 @@ import android.widget.Switch;
 import android.widget.Spinner;
 import android.widget.ArrayAdapter;
 import android.widget.AdapterView;
+import android.widget.HorizontalScrollView;
 
 import android.Manifest;
 import android.content.ActivityNotFoundException;
@@ -98,6 +102,8 @@ import person.notfresh.noteplus.util.NotificationHelper;
 import person.notfresh.noteplus.util.ReminderScheduler;
 import person.notfresh.noteplus.util.StringUtil;
 import person.notfresh.noteplus.util.DisplayUtil;
+import person.notfresh.noteplus.util.ImageUtil;
+import person.notfresh.noteplus.ui.ImagePreviewDialog;
 import person.notfresh.noteplus.core.model.Note;
 import person.notfresh.noteplus.manager.NoteListManager;
 import person.notfresh.noteplus.manager.INoteListCallback;
@@ -107,6 +113,8 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     // 添加权限常量
     private static final int PERMISSION_REQUEST_WRITE_STORAGE = 1001;
     private static final int REQUEST_NOTIFICATION_PERMISSION = 1002;
+    private static final int REQUEST_CODE_PICK_IMAGES = 2001;
+    private static final int MAX_IMAGES = 10;
     
     // 时间线偏好保存常量
     private static final String PREFS_TIMELINE = "timeline_prefs";
@@ -144,6 +152,11 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     private Button addTagButton;
     private ChipGroup tagChipGroup;
     private List<Tag> selectedTags = new ArrayList<>(); // 新增数据状态
+
+    private TextView imageCountText;
+    private HorizontalScrollView selectedImagesScroll;
+    private LinearLayout selectedImagesContainer;
+    private List<String> selectedImagePaths = new ArrayList<>();
 
     private Calendar startCalendar = Calendar.getInstance();
     private Calendar endCalendar = Calendar.getInstance();
@@ -211,6 +224,9 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         endTimeText = findViewById(R.id.endTimeText);
         tagChipGroup = findViewById(R.id.tagChipGroup);
         addTagButton = findViewById(R.id.addTagButton);
+        imageCountText = findViewById(R.id.imageCountText);
+        selectedImagesScroll = findViewById(R.id.selectedImagesScroll);
+        selectedImagesContainer = findViewById(R.id.selectedImagesContainer);
         
         // 初始化日期格式化器
         timeFormat = new SimpleDateFormat("HH:mm", Locale.CHINA);
@@ -276,8 +292,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         // 初始化图片输入按钮
         ImageButton imageInputButton = findViewById(R.id.imageInputButton);
         imageInputButton.setOnClickListener(v -> {
-            Toast.makeText(this, "添加图片功能（待实现）", Toast.LENGTH_SHORT).show();
-            // TODO: 实现图片选择/拍摄功能
+            pickImages();
         });
 
         // 初始化通知助手
@@ -599,6 +614,12 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             values.put(NoteDbHelper.COLUMN_COST, cost); // 保存花费金额
             
             long noteId = db.insert(NoteDbHelper.TABLE_NOTES, null, values);
+
+            if (noteId > 0 && selectedImagePaths != null && !selectedImagePaths.isEmpty()) {
+                for (String imagePath : selectedImagePaths) {
+                    dbHelper.insertNoteImage(noteId, imagePath);
+                }
+            }
             
             // 2. 如果设置了时间范围，保存时间范围
             if (hasTimeRange) {
@@ -643,6 +664,10 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         // 清空选中标签
         selectedTags.clear();
         tagChipGroup.removeAllViews();
+
+        // 清空选中图片
+        selectedImagePaths.clear();
+        updateSelectedImagesUi();
     }
 
     /**
@@ -3547,6 +3572,10 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_CODE_PICK_IMAGES && resultCode == RESULT_OK && data != null) {
+            handleImagePickerResult(data);
+            return;
+        }
         if (requestCode == PICK_FILE_REQUEST_CODE && resultCode == RESULT_OK && data != null) {
             Uri uri = data.getData();
             if (uri != null) {
@@ -3594,6 +3623,180 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                 showImportTargetDialog();
             }
         }
+    }
+
+    private void pickImages() {
+        int remainingSlots = MAX_IMAGES - selectedImagePaths.size();
+        if (remainingSlots <= 0) {
+            Toast.makeText(this, "最多只能选择 " + MAX_IMAGES + " 张图片", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        Intent intent = ImageUtil.createGalleryPickerIntentMultiple();
+        startActivityForResult(intent, REQUEST_CODE_PICK_IMAGES);
+    }
+
+    private void handleImagePickerResult(Intent data) {
+        if (data.getClipData() != null) {
+            ClipData clipData = data.getClipData();
+            int count = clipData.getItemCount();
+            int remainingSlots = MAX_IMAGES - selectedImagePaths.size();
+            int toAdd = Math.min(count, remainingSlots);
+
+            if (toAdd < count) {
+                Toast.makeText(this,
+                        "最多只能选择 " + MAX_IMAGES + " 张图片，已选择前 " + toAdd + " 张",
+                        Toast.LENGTH_LONG).show();
+            }
+
+            for (int i = 0; i < toAdd; i++) {
+                Uri imageUri = clipData.getItemAt(i).getUri();
+                saveImageFromUri(imageUri);
+            }
+        } else if (data.getData() != null) {
+            Uri imageUri = data.getData();
+            saveImageFromUri(imageUri);
+        }
+    }
+
+    private void saveImageFromUri(Uri imageUri) {
+        try {
+            Bitmap bitmap = ImageUtil.uriToBitmap(this, imageUri);
+            if (bitmap == null) {
+                Toast.makeText(this, "无法读取图片", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            Bitmap resizedBitmap = ImageUtil.resizeBitmap(bitmap, 1920);
+            if (resizedBitmap != bitmap && bitmap != null) {
+                bitmap.recycle();
+            }
+
+            File imagesDir = new File(getFilesDir(), "note_images");
+            if (!imagesDir.exists()) {
+                imagesDir.mkdirs();
+            }
+
+            String fileName = "note_image_" + System.currentTimeMillis() + ".jpg";
+            File imageFile = new File(imagesDir, fileName);
+
+            FileOutputStream fos = new FileOutputStream(imageFile);
+            resizedBitmap.compress(Bitmap.CompressFormat.JPEG, 85, fos);
+            fos.close();
+
+            if (resizedBitmap != null && resizedBitmap != bitmap) {
+                resizedBitmap.recycle();
+            }
+
+            selectedImagePaths.add(imageFile.getAbsolutePath());
+            updateSelectedImagesUi();
+        } catch (Exception e) {
+            android.util.Log.e("NotePlusImage", "保存图片失败", e);
+            Toast.makeText(this, "保存图片失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void updateSelectedImagesUi() {
+        if (imageCountText == null || selectedImagesScroll == null || selectedImagesContainer == null) {
+            return;
+        }
+
+        int count = selectedImagePaths.size();
+        if (count <= 0) {
+            imageCountText.setVisibility(View.GONE);
+            selectedImagesScroll.setVisibility(View.GONE);
+            selectedImagesContainer.removeAllViews();
+            return;
+        }
+
+        imageCountText.setVisibility(View.VISIBLE);
+        imageCountText.setText("已选择 " + count + " 张图片");
+        selectedImagesScroll.setVisibility(View.VISIBLE);
+        selectedImagesContainer.removeAllViews();
+
+        int size = DisplayUtil.dpToPx(this, 64);
+        int margin = DisplayUtil.dpToPx(this, 6);
+
+        for (int i = 0; i < selectedImagePaths.size(); i++) {
+            String path = selectedImagePaths.get(i);
+            ImageView imageView = new ImageView(this);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(size, size);
+            params.setMargins(0, 0, margin, 0);
+            imageView.setLayoutParams(params);
+            imageView.setScaleType(ImageView.ScaleType.CENTER_CROP);
+
+            Bitmap bitmap = decodeSampledBitmap(path, size, size);
+            if (bitmap != null) {
+                imageView.setImageBitmap(bitmap);
+            }
+            int index = i;
+            imageView.setOnClickListener(v -> showImagePreview(selectedImagePaths, index));
+            imageView.setOnLongClickListener(v -> {
+                showRemoveImageDialog(index);
+                return true;
+            });
+            selectedImagesContainer.addView(imageView);
+        }
+    }
+
+    private void showRemoveImageDialog(int index) {
+        if (index < 0 || index >= selectedImagePaths.size()) {
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("移除图片")
+                .setMessage("确定要移除这张图片吗？")
+                .setPositiveButton("移除", (dialog, which) -> {
+                    String path = selectedImagePaths.remove(index);
+                    if (path != null) {
+                        File imageFile = new File(path);
+                        if (imageFile.exists()) {
+                            imageFile.delete();
+                        }
+                    }
+                    updateSelectedImagesUi();
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private void showImagePreview(List<String> imagePaths, int currentIndex) {
+        if (imagePaths == null || imagePaths.isEmpty()) {
+            return;
+        }
+        ImagePreviewDialog dialog = ImagePreviewDialog.newInstance(imagePaths, currentIndex);
+        dialog.show(getSupportFragmentManager(), "ImagePreviewDialog");
+    }
+
+    private Bitmap decodeSampledBitmap(String path, int reqWidth, int reqHeight) {
+        if (path == null) {
+            return null;
+        }
+        File file = new File(path);
+        if (!file.exists()) {
+            return null;
+        }
+
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(path, options);
+
+        int height = options.outHeight;
+        int width = options.outWidth;
+        int inSampleSize = 1;
+
+        if (height > reqHeight || width > reqWidth) {
+            int halfHeight = height / 2;
+            int halfWidth = width / 2;
+            while ((halfHeight / inSampleSize) >= reqHeight
+                    && (halfWidth / inSampleSize) >= reqWidth) {
+                inSampleSize *= 2;
+            }
+        }
+
+        options.inJustDecodeBounds = false;
+        options.inSampleSize = inSampleSize;
+        return BitmapFactory.decodeFile(path, options);
     }
 
     /**
@@ -4094,6 +4297,21 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                                     sourceDb.delete(
                                             NoteDbHelper.TABLE_NOTE_COMMENTS,
                                             NoteDbHelper.COLUMN_COMMENT_NOTE_ID + " = ?",
+                                            new String[]{String.valueOf(noteId)}
+                                    );
+
+                                    // 5.2 复制图片路径
+                                    List<String> imagePaths = dbHelper.getNoteImagePaths(noteId);
+                                    if (imagePaths != null && !imagePaths.isEmpty()) {
+                                        for (String imagePath : imagePaths) {
+                                            targetDbHelper.insertNoteImage(newNoteId, imagePath);
+                                        }
+                                    }
+
+                                    // 5.3 删除源项目的图片路径记录
+                                    sourceDb.delete(
+                                            NoteDbHelper.TABLE_NOTE_IMAGES,
+                                            NoteDbHelper.COLUMN_IMAGE_NOTE_ID + " = ?",
                                             new String[]{String.valueOf(noteId)}
                                     );
                                     

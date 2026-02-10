@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <androidx.viewpager.widget.ViewPager
+        android:id="@+id/view_pager"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <TextView
+        android:id="@+id/text_image_index"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="16dp"
+        android:padding="8dp"
+        android:textColor="@android:color/white"
+        android:textSize="14sp"
+        android:background="#66000000"
+        android:visibility="gone" />
+
+    <ImageButton
+        android:id="@+id/btn_close_preview"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="12dp"
+        android:layout_marginEnd="12dp"
+        android:background="@android:color/transparent"
+        android:contentDescription="关闭"
+        android:src="@android:drawable/ic_menu_close_clear_cancel"
+        android:tint="@android:color/white" />
+
+    <ImageButton
+        android:id="@+id/btn_save_preview"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="12dp"
+        android:layout_marginEnd="52dp"
+        android:background="@android:color/transparent"
+        android:contentDescription="保存"
+        android:src="@android:drawable/ic_menu_save"
+        android:tint="@android:color/white" />
+
+</FrameLayout>

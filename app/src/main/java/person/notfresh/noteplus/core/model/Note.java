@@ -15,9 +15,11 @@ public class Note {
     private boolean isPinned;
     private String projectName;  // 所属项目名称
     private List<Comment> comments;
+    private List<String> images;
     
     public Note() {
         this.comments = new ArrayList<>();
+        this.images = new ArrayList<>();
     }
     
     public Note(long id, String content, long timestamp, double cost, boolean isPinned) {
@@ -27,6 +29,7 @@ public class Note {
         this.cost = cost;
         this.isPinned = isPinned;
         this.comments = new ArrayList<>();
+        this.images = new ArrayList<>();
     }
     
     public Note(long id, String content, long timestamp, double cost, boolean isPinned, String projectName) {
@@ -37,6 +40,7 @@ public class Note {
         this.isPinned = isPinned;
         this.projectName = projectName;
         this.comments = new ArrayList<>();
+        this.images = new ArrayList<>();
     }
     
     // Getters and Setters
@@ -86,6 +90,25 @@ public class Note {
     
     public void setProjectName(String projectName) {
         this.projectName = projectName;
+    }
+
+    /**
+     * 获取图片路径列表
+     * @return 图片路径列表
+     */
+    public List<String> getImages() {
+        if (images == null) {
+            images = new ArrayList<>();
+        }
+        return images;
+    }
+
+    /**
+     * 设置图片路径列表
+     * @param images 图片路径列表
+     */
+    public void setImages(List<String> images) {
+        this.images = images;
     }
     
     /**

@@ -36,6 +36,8 @@ android {
 
 dependencies {
     implementation("androidx.appcompat:appcompat:1.6.1")
+    implementation("androidx.viewpager:viewpager:1.0.0")
+    implementation("com.github.chrisbanes:PhotoView:2.3.0")
     implementation(libs.material)
     implementation(libs.constraintlayout)
     implementation(libs.navigation.fragment)

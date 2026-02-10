@@ -20,12 +20,14 @@ import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
+import androidx.fragment.app.FragmentActivity;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
+import person.notfresh.noteplus.ui.ImagePreviewDialog;
 import java.util.Locale;
 import java.util.Set;
 
@@ -38,7 +40,6 @@ import person.notfresh.noteplus.core.model.Note;
 import person.notfresh.noteplus.db.NoteDbHelper;
 import person.notfresh.noteplus.manager.INoteListCallback;
 import person.notfresh.noteplus.util.DisplayUtil;
-import person.notfresh.noteplus.manager.NoteCursorWrapper;
 import person.notfresh.noteplus.util.StringUtil;
 
 /**
@@ -144,10 +145,14 @@ public class NoteListManager {
         
         // 添加点击监听器
         listView.setOnItemClickListener((parent, view, position, id) -> {
+            Note note = (Note) adapter.getItem(position);
+            if (note == null) {
+                return;
+            }
+
+            long noteId = note.getId();
             if (isMultiSelectMode) {
                 // 多选模式下，点击切换选择状态
-                Note note = (Note) adapter.getItem(position);
-                long noteId = note.getId();
                 CheckBox checkBox = view.findViewById(R.id.checkBox);
                 if (checkBox != null) {
                     checkBox.setChecked(!checkBox.isChecked());
@@ -161,6 +166,9 @@ public class NoteListManager {
                         callback.onRequestRefreshMenu();
                     }
                 }
+            } else {
+                // 非多选模式下，点击列表项直接显示笔记菜单
+                showNoteOptionsMenu(view, noteId);
             }
         });
         
@@ -675,6 +683,9 @@ public class NoteListManager {
         
         // 添加标签信息
         addTagsInfo(extrasContainer, noteId);
+
+        // 添加图片信息
+        addImagesInfo(extrasContainer, noteId);
         
         // 添加追加内容信息
         addCommentsInfo(extrasContainer, noteId);
@@ -798,6 +809,175 @@ public class NoteListManager {
             
             tagsCursor.close();
         }
+    }
+
+    /**
+     * 添加图片信息到列表项
+     */
+    private void addImagesInfo(LinearLayout container, long noteId) {
+        if (callback == null) {
+            return;
+        }
+
+        NoteDbHelper dbHelper = callback.getDbHelper();
+        Context context = callback.getContext();
+        if (dbHelper == null || context == null) {
+            return;
+        }
+
+        java.util.List<String> imagePaths = dbHelper.getNoteImagePaths(noteId);
+        if (imagePaths == null || imagePaths.isEmpty()) {
+            return;
+        }
+
+        LinearLayout imageLayout = new LinearLayout(context);
+        imageLayout.setOrientation(LinearLayout.VERTICAL);
+        int padding = DisplayUtil.dpToPx(context, 4);
+        imageLayout.setPadding(padding, padding, padding, padding);
+
+        TextView label = new TextView(context);
+        label.setText("图片: ");
+        label.setTypeface(null, android.graphics.Typeface.BOLD);
+        imageLayout.addView(label);
+
+        android.widget.HorizontalScrollView scrollView = new android.widget.HorizontalScrollView(context);
+        scrollView.setHorizontalScrollBarEnabled(false);
+
+        LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+
+        int imageSize = DisplayUtil.dpToPx(context, 64);
+        int margin = DisplayUtil.dpToPx(context, 4);
+
+        for (String path : imagePaths) {
+            android.widget.ImageView imageView = new android.widget.ImageView(context);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(imageSize, imageSize);
+            params.setMargins(0, 0, margin, 0);
+            imageView.setLayoutParams(params);
+            imageView.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+
+            android.graphics.Bitmap bitmap = decodeSampledBitmap(path, imageSize, imageSize);
+            if (bitmap != null) {
+                imageView.setImageBitmap(bitmap);
+            }
+
+            int index = row.getChildCount();
+            imageView.setOnClickListener(v -> showImagePreview(context, imagePaths, index));
+            imageView.setOnLongClickListener(v -> {
+                showImageActionMenu(context, noteId, path, v);
+                return true;
+            });
+            row.addView(imageView);
+        }
+
+        scrollView.addView(row);
+        imageLayout.addView(scrollView);
+        container.addView(imageLayout);
+    }
+
+    private void showImagePreview(Context context, java.util.List<String> imagePaths, int currentIndex) {
+        if (context instanceof FragmentActivity) {
+            FragmentActivity activity = (FragmentActivity) context;
+            ImagePreviewDialog dialog = ImagePreviewDialog.newInstance(imagePaths, currentIndex);
+            dialog.show(activity.getSupportFragmentManager(), "ImagePreviewDialog");
+        } else {
+            Toast.makeText(context, "无法显示图片预览", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void showImageActionMenu(Context context, long noteId, String imagePath, View anchorView) {
+        if (context == null || imagePath == null) {
+            return;
+        }
+
+        String[] options = new String[]{"删除图片", "笔记菜单"};
+        new android.app.AlertDialog.Builder(context)
+                .setTitle("图片操作")
+                .setItems(options, (dialog, which) -> {
+                    if (which == 0) {
+                        showRemoveImageDialog(context, noteId, imagePath);
+                    } else if (which == 1) {
+                        View noteItemView = findNoteItemView(anchorView, noteId);
+                        if (noteItemView != null) {
+                            showNoteOptionsMenu(noteItemView, noteId);
+                        } else {
+                            Toast.makeText(context, "无法打开笔记菜单", Toast.LENGTH_SHORT).show();
+                        }
+                    }
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private void showRemoveImageDialog(Context context, long noteId, String imagePath) {
+        NoteDbHelper dbHelper = callback != null ? callback.getDbHelper() : null;
+        new android.app.AlertDialog.Builder(context)
+                .setTitle("删除图片")
+                .setMessage("确定要删除这张图片吗？")
+                .setPositiveButton("删除", (dialog, which) -> {
+                    if (dbHelper != null) {
+                        dbHelper.deleteNoteImage(noteId, imagePath);
+                    }
+                    java.io.File imageFile = new java.io.File(imagePath);
+                    if (imageFile.exists()) {
+                        imageFile.delete();
+                    }
+                    refreshNoteView(noteId);
+                    Toast.makeText(context, "图片已删除", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private View findNoteItemView(View startView, long noteId) {
+        View current = startView;
+        while (current != null) {
+            Object tag = current.getTag();
+            if (tag instanceof Long && ((Long) tag) == noteId) {
+                return current;
+            }
+            if (tag instanceof Number && ((Number) tag).longValue() == noteId) {
+                return current;
+            }
+            if (current.getParent() instanceof View) {
+                current = (View) current.getParent();
+            } else {
+                break;
+            }
+        }
+        return null;
+    }
+
+    private android.graphics.Bitmap decodeSampledBitmap(String path, int reqWidth, int reqHeight) {
+        if (path == null) {
+            return null;
+        }
+        java.io.File file = new java.io.File(path);
+        if (!file.exists()) {
+            return null;
+        }
+
+        android.graphics.BitmapFactory.Options options = new android.graphics.BitmapFactory.Options();
+        options.inJustDecodeBounds = true;
+        android.graphics.BitmapFactory.decodeFile(path, options);
+
+        int height = options.outHeight;
+        int width = options.outWidth;
+        int inSampleSize = 1;
+
+        if (height > reqHeight || width > reqWidth) {
+            int halfHeight = height / 2;
+            int halfWidth = width / 2;
+
+            while ((halfHeight / inSampleSize) >= reqHeight
+                    && (halfWidth / inSampleSize) >= reqWidth) {
+                inSampleSize *= 2;
+            }
+        }
+
+        options.inJustDecodeBounds = false;
+        options.inSampleSize = inSampleSize;
+        return android.graphics.BitmapFactory.decodeFile(path, options);
     }
     
     /**
@@ -2008,6 +2188,36 @@ public class NoteListManager {
             
             // 设置tag，用于后续定位View
             convertView.setTag(noteId);
+
+            // 点击列表项空白区域时弹出笔记菜单（图片区域有自己的点击事件）
+            convertView.setOnClickListener(v -> {
+                if (isMultiSelectMode) {
+                    CheckBox checkBox = v.findViewById(R.id.checkBox);
+                    if (checkBox != null) {
+                        checkBox.setChecked(!checkBox.isChecked());
+                        if (checkBox.isChecked()) {
+                            selectedNoteIds.add(noteId);
+                        } else {
+                            selectedNoteIds.remove(noteId);
+                        }
+                        if (callback != null) {
+                            callback.onMultiSelectChanged(selectedNoteIds);
+                            callback.onRequestRefreshMenu();
+                        }
+                    }
+                } else {
+                    showNoteOptionsMenu(v, noteId);
+                }
+            });
+
+            // 长按列表项弹出笔记菜单（图片区域有自己的长按菜单）
+            convertView.setOnLongClickListener(v -> {
+                if (isMultiSelectMode) {
+                    return false;
+                }
+                showNoteOptionsMenu(v, noteId);
+                return true;
+            });
             
             // 获取基础视图组件
             TextView contentText = convertView.findViewById(R.id.contentText);

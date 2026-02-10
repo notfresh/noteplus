@@ -8,7 +8,7 @@ import android.content.ContentValues;
 
 public class NoteDbHelper extends SQLiteOpenHelper {
     private static final String DATABASE_NAME = "notes.db";
-    private static final int DATABASE_VERSION = 8;
+    private static final int DATABASE_VERSION = 9;
 
     public static final String TABLE_NOTES = "notes";
     public static final String COLUMN_ID = "_id";
@@ -24,6 +24,7 @@ public class NoteDbHelper extends SQLiteOpenHelper {
     public static final String TABLE_NOTE_TAGS = "note_tags";
     public static final String TABLE_SETTINGS = "settings";
     public static final String TABLE_NOTE_COMMENTS = "note_comments";
+    public static final String TABLE_NOTE_IMAGES = "note_images";
 
     public static final String COLUMN_TAG_ID = "tag_id";
     public static final String COLUMN_TAG_NAME = "tag_name";
@@ -45,6 +46,10 @@ public class NoteDbHelper extends SQLiteOpenHelper {
     public static final String COLUMN_COMMENT_CONTENT = "content";
     public static final String COLUMN_COMMENT_TIMESTAMP = "timestamp";
     public static final String COLUMN_COMMENT_COST = "cost";
+
+    public static final String COLUMN_IMAGE_ID = "image_id";
+    public static final String COLUMN_IMAGE_NOTE_ID = "note_id";
+    public static final String COLUMN_IMAGE_PATH = "path";
 
     public static final String KEY_TIME_RANGE_REQUIRED = "time_range_required";
     public static final String KEY_TIME_RANGE_DISPLAY = "time_range_display";
@@ -112,12 +117,20 @@ public class NoteDbHelper extends SQLiteOpenHelper {
                 + "FOREIGN KEY (" + COLUMN_COMMENT_NOTE_ID + ") REFERENCES " + TABLE_NOTES + "(" + COLUMN_ID + ") ON DELETE CASCADE,"
                 + "FOREIGN KEY (" + COLUMN_PARENT_COMMENT_ID + ") REFERENCES " + TABLE_NOTE_COMMENTS + "(" + COLUMN_COMMENT_ID + ") ON DELETE CASCADE"
                 + ")";
+
+        String CREATE_NOTE_IMAGES_TABLE = "CREATE TABLE " + TABLE_NOTE_IMAGES + "("
+            + COLUMN_IMAGE_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
+            + COLUMN_IMAGE_NOTE_ID + " INTEGER NOT NULL,"
+            + COLUMN_IMAGE_PATH + " TEXT NOT NULL,"
+            + "FOREIGN KEY (" + COLUMN_IMAGE_NOTE_ID + ") REFERENCES " + TABLE_NOTES + "(" + COLUMN_ID + ") ON DELETE CASCADE"
+            + ")";
         
         database.execSQL(CREATE_TAGS_TABLE);
         database.execSQL(CREATE_TIME_RANGES_TABLE);
         database.execSQL(CREATE_NOTE_TAGS_TABLE);
         database.execSQL(CREATE_SETTINGS_TABLE);
         database.execSQL(CREATE_NOTE_COMMENTS_TABLE);
+        database.execSQL(CREATE_NOTE_IMAGES_TABLE);
         
         // 创建索引
         database.execSQL("CREATE INDEX IF NOT EXISTS idx_note_comments_note_id ON " 
@@ -252,6 +265,75 @@ public class NoteDbHelper extends SQLiteOpenHelper {
                 // 如果字段已存在，忽略错误
             }
         }
+
+        if (oldVersion < 9) {
+            // 创建笔记图片表
+            String CREATE_NOTE_IMAGES_TABLE = "CREATE TABLE IF NOT EXISTS " + TABLE_NOTE_IMAGES + "("
+                    + COLUMN_IMAGE_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    + COLUMN_IMAGE_NOTE_ID + " INTEGER NOT NULL,"
+                    + COLUMN_IMAGE_PATH + " TEXT NOT NULL,"
+                    + "FOREIGN KEY (" + COLUMN_IMAGE_NOTE_ID + ") REFERENCES " + TABLE_NOTES + "(" + COLUMN_ID + ") ON DELETE CASCADE"
+                    + ")";
+            db.execSQL(CREATE_NOTE_IMAGES_TABLE);
+        }
+    }
+
+    /**
+     * 插入笔记图片路径
+     */
+    public long insertNoteImage(long noteId, String imagePath) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put(COLUMN_IMAGE_NOTE_ID, noteId);
+        values.put(COLUMN_IMAGE_PATH, imagePath);
+        return db.insert(TABLE_NOTE_IMAGES, null, values);
+    }
+
+    /**
+     * 获取笔记图片路径列表
+     */
+    public java.util.List<String> getNoteImagePaths(long noteId) {
+        java.util.List<String> paths = new java.util.ArrayList<>();
+        SQLiteDatabase db = this.getReadableDatabase();
+        Cursor cursor = db.query(
+                TABLE_NOTE_IMAGES,
+                new String[]{COLUMN_IMAGE_PATH},
+                COLUMN_IMAGE_NOTE_ID + " = ?",
+                new String[]{String.valueOf(noteId)},
+                null, null, null
+        );
+
+        if (cursor != null) {
+            while (cursor.moveToNext()) {
+                paths.add(cursor.getString(0));
+            }
+            cursor.close();
+        }
+        return paths;
+    }
+
+    /**
+     * 删除笔记的图片路径记录
+     */
+    public void deleteNoteImages(long noteId) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        db.delete(
+                TABLE_NOTE_IMAGES,
+                COLUMN_IMAGE_NOTE_ID + " = ?",
+                new String[]{String.valueOf(noteId)}
+        );
+    }
+
+    /**
+     * 删除单张笔记图片路径记录
+     */
+    public int deleteNoteImage(long noteId, String imagePath) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        return db.delete(
+                TABLE_NOTE_IMAGES,
+                COLUMN_IMAGE_NOTE_ID + " = ? AND " + COLUMN_IMAGE_PATH + " = ?",
+                new String[]{String.valueOf(noteId), imagePath}
+        );
     }
 
     public Cursor getAllTags() {
@@ -874,8 +956,15 @@ public class NoteDbHelper extends SQLiteOpenHelper {
             COLUMN_COMMENT_NOTE_ID + " = ?",
             new String[]{String.valueOf(noteId)}
         );
+
+        // 4. 删除相关的图片路径记录
+        db.delete(
+            TABLE_NOTE_IMAGES,
+            COLUMN_IMAGE_NOTE_ID + " = ?",
+            new String[]{String.valueOf(noteId)}
+        );
         
-        // 4. 删除记录本身
+        // 5. 删除记录本身
         db.delete(
             TABLE_NOTES,
             COLUMN_ID + " = ?",
@@ -892,6 +981,8 @@ public class NoteDbHelper extends SQLiteOpenHelper {
      */
     public int deleteNote(long noteId) {
         SQLiteDatabase db = this.getWritableDatabase();
+
+        java.util.List<String> imagePaths = getNoteImagePaths(noteId);
         
         // 先检查笔记是否存在
         Cursor cursor = db.query(
@@ -911,22 +1002,36 @@ public class NoteDbHelper extends SQLiteOpenHelper {
             return 0;
         }
         
+        int result = 0;
+
         // 开始事务
         db.beginTransaction();
         try {
             // 使用事务中的删除方法
             deleteNoteInTransaction(db, noteId);
-            
+
             // 提交事务
             db.setTransactionSuccessful();
-            
-            return 1;
+
+            result = 1;
         } catch (Exception e) {
-            return 0;
+            result = 0;
         } finally {
             // 结束事务
             db.endTransaction();
         }
+
+        if (result > 0 && imagePaths != null && !imagePaths.isEmpty()) {
+            for (String imagePath : imagePaths) {
+                java.io.File imageFile = new java.io.File(imagePath);
+                if (imageFile.exists()) {
+                    // 忽略删除失败
+                    imageFile.delete();
+                }
+            }
+        }
+
+        return result;
     }
     
     /**
