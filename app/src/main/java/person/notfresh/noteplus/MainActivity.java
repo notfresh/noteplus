@@ -604,6 +604,9 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             return;
         }
 
+        // 保存前停止正在播放的预览音频
+        stopPreviewPlayback();
+
         
         // 检查是否开启了时间范围必填
         String timeRangeRequired = dbHelper.getSetting(NoteDbHelper.KEY_TIME_RANGE_REQUIRED, "false");
