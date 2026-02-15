@@ -112,6 +112,30 @@
 
                     <!-- 标签将通过代码动态添加 -->
                 </LinearLayout>
+
+                <!-- 图片容器 -->
+                <LinearLayout
+                    android:id="@+id/detailImagesContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:layout_marginTop="12dp"
+                    android:visibility="gone">
+
+                    <!-- 图片将通过代码动态添加 -->
+                </LinearLayout>
+
+                <!-- 音频容器 -->
+                <LinearLayout
+                    android:id="@+id/detailAudioContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:layout_marginTop="12dp"
+                    android:visibility="gone">
+
+                    <!-- 音频将通过代码动态添加 -->
+                </LinearLayout>
             </LinearLayout>
 
             <!-- Comment列表区域 -->

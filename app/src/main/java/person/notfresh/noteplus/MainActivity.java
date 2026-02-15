@@ -2700,7 +2700,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
      * @param noteId Note ID
      * @return Note对象，如果不存在返回null
      */
-    private Note loadNoteById(NoteDbHelper dbHelper, long noteId) {
+    private Note loadNoteById(NoteDbHelper dbHelper, long noteId, String projectName) {
         if (dbHelper == null) {
             return null;
         }
@@ -2735,7 +2735,6 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                 double cost = cursor.getDouble(costIndex);
                 boolean isPinned = pinnedIndex >= 0 && cursor.getInt(pinnedIndex) == 1;
                 
-                String projectName = projectManager.getCurrentProject();
                 return new Note(id, content, timestamp, cost, isPinned, projectName);
             }
         } finally {
@@ -2835,7 +2834,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                 }
                 
                 // 加载Note基本信息
-                Note note = loadNoteById(dbHelper, noteId);
+                Note note = loadNoteById(dbHelper, noteId, projectName);
                 if (note == null) {
                     throw new Exception("Timeline: Note不存在: " + noteId);
                 }
@@ -2853,7 +2852,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                 
                 runOnUiThread(() -> {
                     // 直接显示详情对话框，不延迟
-                    showNoteDetailDialog(finalNote, finalComments, finalTagsCursor);
+                    showNoteDetailDialog(finalNote, finalComments, finalTagsCursor, dbHelper);
                 });
             } catch (Exception e) {
                 // 使用Log记录完整异常信息，包括堆栈，便于通过"Timeline"标签过滤
@@ -2872,8 +2871,9 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
      * @param note Note对象
      * @param comments Comment列表
      * @param tagsCursor 标签Cursor
+     * @param noteDbHelper 该笔记所属项目的数据库Helper
      */
-    private void showNoteDetailDialog(Note note, List<Comment> comments, Cursor tagsCursor) {
+    private void showNoteDetailDialog(Note note, List<Comment> comments, Cursor tagsCursor, NoteDbHelper noteDbHelper) {
         // 创建对话框
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         View dialogView = getLayoutInflater().inflate(R.layout.dialog_note_detail, null);
@@ -2992,6 +2992,14 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         } else {
             detailTagsContainer.setVisibility(View.GONE);
         }
+        
+        // 加载并显示图片
+        LinearLayout detailImagesContainer = dialogView.findViewById(R.id.detailImagesContainer);
+        loadTimelineNoteImages(detailImagesContainer, note.getId(), noteDbHelper);
+        
+        // 加载并显示音频
+        LinearLayout detailAudioContainer = dialogView.findViewById(R.id.detailAudioContainer);
+        loadTimelineNoteAudio(detailAudioContainer, note.getId(), noteDbHelper);
         
         // 设置Comment列表适配器
         NoteDetailCommentAdapter commentAdapter = new NoteDetailCommentAdapter(comments);
@@ -3175,6 +3183,265 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             
             return convertView;
         }
+    }
+    
+    /**
+     * 在时间线笔记详情对话框中加载并显示图片
+     */
+    private void loadTimelineNoteImages(LinearLayout container, long noteId, NoteDbHelper noteDbHelper) {
+        if (container == null || noteDbHelper == null) {
+            android.util.Log.d("Timeline", "loadTimelineNoteImages: container or noteDbHelper is null");
+            return;
+        }
+        
+        java.util.List<String> imagePaths = noteDbHelper.getNoteImagePaths(noteId);
+        android.util.Log.d("Timeline", "loadTimelineNoteImages: noteId=" + noteId + ", imagePaths size=" + (imagePaths != null ? imagePaths.size() : "null"));
+        
+        if (imagePaths == null || imagePaths.isEmpty()) {
+            container.setVisibility(View.GONE);
+            return;
+        }
+        
+        container.removeAllViews();
+        container.setVisibility(View.VISIBLE);
+        
+        TextView label = new TextView(this);
+        label.setText("图片: ");
+        label.setTypeface(null, android.graphics.Typeface.BOLD);
+        container.addView(label);
+        
+        android.widget.HorizontalScrollView scrollView = new android.widget.HorizontalScrollView(this);
+        scrollView.setHorizontalScrollBarEnabled(false);
+        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        scrollView.setLayoutParams(scrollParams);
+        
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+        
+        int imageSize = person.notfresh.noteplus.util.DisplayUtil.dpToPx(this, 64);
+        int margin = person.notfresh.noteplus.util.DisplayUtil.dpToPx(this, 4);
+        
+        for (int idx = 0; idx < imagePaths.size(); idx++) {
+            String path = imagePaths.get(idx);
+            android.util.Log.d("Timeline", "Loading image: " + path);
+            
+            android.widget.ImageView imageView = new android.widget.ImageView(this);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(imageSize, imageSize);
+            params.setMargins(0, 0, margin, 0);
+            imageView.setLayoutParams(params);
+            imageView.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+            imageView.setBackgroundColor(0xFFEEEEEE); // 灰色背景，方便看是否显示
+            
+            android.graphics.Bitmap bitmap = decodeSampledBitmap(path, imageSize, imageSize);
+            if (bitmap != null) {
+                imageView.setImageBitmap(bitmap);
+                android.util.Log.d("Timeline", "Image loaded successfully: " + path);
+            } else {
+                android.util.Log.w("Timeline", "Failed to load image: " + path);
+            }
+            
+            final int index = idx;
+            imageView.setOnClickListener(v -> showImagePreview(imagePaths, index));
+            row.addView(imageView);
+        }
+        
+        scrollView.addView(row);
+        container.addView(scrollView);
+    }
+    
+    /**
+     * 在时间线笔记详情对话框中加载并显示音频
+     */
+    private void loadTimelineNoteAudio(LinearLayout container, long noteId, NoteDbHelper noteDbHelper) {
+        if (container == null || noteDbHelper == null) {
+            return;
+        }
+        
+        List<AudioAttachment> audioItems = noteDbHelper.getNoteAudioItems(noteId);
+        if (audioItems == null || audioItems.isEmpty()) {
+            container.setVisibility(View.GONE);
+            return;
+        }
+        
+        container.removeAllViews();
+        container.setVisibility(View.VISIBLE);
+        
+        TextView label = new TextView(this);
+        label.setText("录音: ");
+        label.setTypeface(null, android.graphics.Typeface.BOLD);
+        container.addView(label);
+        
+        for (int i = 0; i < audioItems.size(); i++) {
+            AudioAttachment item = audioItems.get(i);
+            View itemView = getLayoutInflater().inflate(R.layout.item_audio_attachment, container, false);
+            
+            TextView nameText = itemView.findViewById(R.id.audioItemName);
+            TextView durationText = itemView.findViewById(R.id.audioItemDuration);
+            TextView currentTimeText = itemView.findViewById(R.id.audioItemCurrentTime);
+            SeekBar seekBar = itemView.findViewById(R.id.audioItemSeekBar);
+            ImageButton playButton = itemView.findViewById(R.id.audioItemPlayPauseButton);
+            ImageButton exportButton = itemView.findViewById(R.id.audioItemExportButton);
+            ImageButton deleteButton = itemView.findViewById(R.id.audioItemDeleteButton);
+            
+            nameText.setText("录音 " + (i + 1));
+            durationText.setText(formatDuration((int) item.getDurationMs()));
+            currentTimeText.setText("00:00");
+            seekBar.setMax((int) Math.max(1, item.getDurationMs()));
+            seekBar.setProgress(0);
+            
+            playButton.setOnClickListener(v -> playAudioInDialog(item.getPath(), playButton, seekBar, currentTimeText, durationText));
+            exportButton.setOnClickListener(v -> exportAudioFile(item.getPath()));
+            deleteButton.setOnClickListener(v -> showRemoveAudioDialogForTimeline(noteId, item, container, noteDbHelper));
+            
+            container.addView(itemView);
+        }
+    }
+    
+    /**
+     * 在对话框中播放音频
+     */
+    private void playAudioInDialog(String path, ImageButton playButton, SeekBar seekBar, 
+                                   TextView currentTimeText, TextView totalTimeText) {
+        if (path == null) {
+            return;
+        }
+        
+        // 如果已经有音频在播放
+        if (previewPlayer != null && path.equals(previewPlayingPath)) {
+            if (previewPlayer.isPlaying()) {
+                previewPlayer.pause();
+                playButton.setImageResource(R.drawable.ic_audio_play);
+                if (previewProgressHandler != null) {
+                    previewProgressHandler.removeCallbacksAndMessages(null);
+                }
+            } else {
+                previewPlayer.start();
+                playButton.setImageResource(R.drawable.ic_audio_pause);
+                startAudioProgressUpdatesForDialog(seekBar, currentTimeText);
+            }
+            return;
+        }
+        
+        // 停止之前的音频
+        if (previewPlayer != null) {
+            try {
+                previewPlayer.stop();
+                previewPlayer.release();
+            } catch (Exception ignored) {
+            }
+            if (previewProgressHandler != null) {
+                previewProgressHandler.removeCallbacksAndMessages(null);
+            }
+        }
+        
+        try {
+            previewPlayer = new MediaPlayer();
+            previewPlayer.setDataSource(path);
+            previewPlayer.prepare();
+            previewPlayer.start();
+            previewPlayingPath = path;
+            playButton.setImageResource(R.drawable.ic_audio_pause);
+            int duration = previewPlayer.getDuration();
+            
+            seekBar.setMax(Math.max(1, duration));
+            seekBar.setProgress(0);
+            totalTimeText.setText(formatDuration(duration));
+            currentTimeText.setText("00:00");
+            
+            seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                @Override
+                public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                    if (fromUser && previewPlayer != null) {
+                        previewPlayer.seekTo(progress);
+                        currentTimeText.setText(formatDuration(progress));
+                    }
+                }
+                
+                @Override
+                public void onStartTrackingTouch(SeekBar seekBar) {}
+                
+                @Override
+                public void onStopTrackingTouch(SeekBar seekBar) {}
+            });
+            
+            startAudioProgressUpdatesForDialog(seekBar, currentTimeText);
+            
+            previewPlayer.setOnCompletionListener(mp -> {
+                playButton.setImageResource(R.drawable.ic_audio_play);
+                if (previewProgressHandler != null) {
+                    previewProgressHandler.removeCallbacksAndMessages(null);
+                }
+            });
+            
+            previewPlayer.setOnErrorListener((mp, what, extra) -> {
+                playButton.setImageResource(R.drawable.ic_audio_play);
+                if (previewProgressHandler != null) {
+                    previewProgressHandler.removeCallbacksAndMessages(null);
+                }
+                Toast.makeText(this, "音频播放失败", Toast.LENGTH_SHORT).show();
+                return true;
+            });
+        } catch (Exception e) {
+            android.util.Log.e("Timeline", "播放音频失败", e);
+            Toast.makeText(this, "播放音频失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+    
+    /**
+     * 在对话框中定时更新音频进度
+     */
+    private void startAudioProgressUpdatesForDialog(SeekBar seekBar, TextView currentTimeText) {
+        if (previewProgressHandler == null) {
+            previewProgressHandler = new Handler(Looper.getMainLooper());
+        }
+        
+        Runnable updateProgress = new Runnable() {
+            @Override
+            public void run() {
+                if (previewPlayer != null && previewPlayer.isPlaying() && seekBar != null) {
+                    int currentPosition = previewPlayer.getCurrentPosition();
+                    seekBar.setProgress(currentPosition);
+                    if (currentTimeText != null) {
+                        currentTimeText.setText(formatDuration(currentPosition));
+                    }
+                    previewProgressHandler.postDelayed(this, 300);
+                }
+            }
+        };
+        
+        previewProgressHandler.post(updateProgress);
+    }
+    
+    /**
+     * 在时间线对话框中显示删除音频确认对话框
+     */
+    private void showRemoveAudioDialogForTimeline(long noteId, AudioAttachment item, LinearLayout container, NoteDbHelper noteDbHelper) {
+        if (item == null || item.getPath() == null || noteDbHelper == null) {
+            return;
+        }
+        
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("删除录音")
+                .setMessage("确定要删除这条录音吗？")
+                .setPositiveButton("删除", (dialog, which) -> {
+                    noteDbHelper.deleteNoteAudio(noteId, item.getPath());
+                    java.io.File audioFile = new java.io.File(item.getPath());
+                    if (audioFile.exists()) {
+                        audioFile.delete();
+                    }
+                    // 重新加载音频列表
+                    loadTimelineNoteAudio(container, noteId, noteDbHelper);
+                    Toast.makeText(this, "录音已删除", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("取消", null)
+                .show();
     }
     
     /**
