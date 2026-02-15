@@ -64,6 +64,9 @@ import android.widget.Spinner;
 import android.widget.ArrayAdapter;
 import android.widget.AdapterView;
 import android.widget.HorizontalScrollView;
+import android.media.MediaRecorder;
+import android.media.MediaPlayer;
+import android.media.MediaMetadataRetriever;
 
 import android.Manifest;
 import android.content.ActivityNotFoundException;
@@ -83,6 +86,7 @@ import androidx.appcompat.widget.PopupMenu;
 import androidx.appcompat.widget.Toolbar;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.content.FileProvider;
 
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
@@ -107,6 +111,7 @@ import person.notfresh.noteplus.ui.ImagePreviewDialog;
 import person.notfresh.noteplus.core.model.Note;
 import person.notfresh.noteplus.manager.NoteListManager;
 import person.notfresh.noteplus.manager.INoteListCallback;
+import person.notfresh.noteplus.core.model.AudioAttachment;
 
 
 public class MainActivity extends AppCompatActivity implements INoteListCallback {
@@ -115,6 +120,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     private static final int REQUEST_NOTIFICATION_PERMISSION = 1002;
     private static final int REQUEST_CODE_PICK_IMAGES = 2001;
     private static final int MAX_IMAGES = 10;
+    private static final int REQUEST_RECORD_AUDIO_PERMISSION = 1004;
     
     // 时间线偏好保存常量
     private static final String PREFS_TIMELINE = "timeline_prefs";
@@ -153,10 +159,25 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     private ChipGroup tagChipGroup;
     private List<Tag> selectedTags = new ArrayList<>(); // 新增数据状态
 
+    private ImageButton voiceInputButton;
+
     private TextView imageCountText;
     private HorizontalScrollView selectedImagesScroll;
     private LinearLayout selectedImagesContainer;
     private List<String> selectedImagePaths = new ArrayList<>();
+
+    private TextView audioCountText;
+    private LinearLayout selectedAudiosContainer;
+    private List<AudioAttachment> selectedAudioItems = new ArrayList<>();
+
+    private MediaRecorder mediaRecorder;
+    private boolean isRecording = false;
+    private File currentRecordingFile;
+    private long recordingStartTime = 0L;
+
+    private MediaPlayer previewPlayer;
+    private String previewPlayingPath;
+    private ImageButton previewPlayingButton;
 
     private Calendar startCalendar = Calendar.getInstance();
     private Calendar endCalendar = Calendar.getInstance();
@@ -227,6 +248,8 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         imageCountText = findViewById(R.id.imageCountText);
         selectedImagesScroll = findViewById(R.id.selectedImagesScroll);
         selectedImagesContainer = findViewById(R.id.selectedImagesContainer);
+        audioCountText = findViewById(R.id.audioCountText);
+        selectedAudiosContainer = findViewById(R.id.selectedAudiosContainer);
         
         // 初始化日期格式化器
         timeFormat = new SimpleDateFormat("HH:mm", Locale.CHINA);
@@ -283,11 +306,8 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         expandButton.setOnClickListener(v -> toggleInputMode());
         
         // 初始化语音输入按钮
-        ImageButton voiceInputButton = findViewById(R.id.voiceInputButton);
-        voiceInputButton.setOnClickListener(v -> {
-            Toast.makeText(this, "语音输入功能（待实现）", Toast.LENGTH_SHORT).show();
-            // TODO: 实现语音输入功能
-        });
+        voiceInputButton = findViewById(R.id.voiceInputButton);
+        voiceInputButton.setOnClickListener(v -> toggleRecording());
         
         // 初始化图片输入按钮
         ImageButton imageInputButton = findViewById(R.id.imageInputButton);
@@ -326,6 +346,8 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        stopRecordingIfNeeded();
+        stopPreviewPlayback();
         // NoteListManager 会自己管理 Cursor 包装器的关闭
         if (dbHelper != null) {
             dbHelper.close();
@@ -620,6 +642,14 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                     dbHelper.insertNoteImage(noteId, imagePath);
                 }
             }
+
+            if (noteId > 0 && selectedAudioItems != null && !selectedAudioItems.isEmpty()) {
+                for (AudioAttachment item : selectedAudioItems) {
+                    if (item != null && item.getPath() != null) {
+                        dbHelper.insertNoteAudio(noteId, item.getPath(), item.getDurationMs());
+                    }
+                }
+            }
             
             // 2. 如果设置了时间范围，保存时间范围
             if (hasTimeRange) {
@@ -668,6 +698,10 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         // 清空选中图片
         selectedImagePaths.clear();
         updateSelectedImagesUi();
+
+        // 清空选中音频
+        selectedAudioItems.clear();
+        updateSelectedAudioUi();
     }
 
     /**
@@ -1830,6 +1864,12 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                 showExportDialog();
             } else {
                 Toast.makeText(this, "需要存储权限才能导出数据", Toast.LENGTH_SHORT).show();
+            }
+        } else if (requestCode == REQUEST_RECORD_AUDIO_PERMISSION) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                startRecording();
+            } else {
+                Toast.makeText(this, "需要录音权限才能使用语音功能", Toast.LENGTH_SHORT).show();
             }
         }
     }
@@ -3739,6 +3779,256 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         }
     }
 
+    private void toggleRecording() {
+        if (isRecording) {
+            stopRecording();
+        } else {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                    != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this,
+                        new String[]{Manifest.permission.RECORD_AUDIO},
+                        REQUEST_RECORD_AUDIO_PERMISSION);
+                return;
+            }
+            startRecording();
+        }
+    }
+
+    private void startRecording() {
+        if (isRecording) {
+            return;
+        }
+
+        try {
+            File audioDir = new File(getFilesDir(), "note_audio");
+            if (!audioDir.exists()) {
+                audioDir.mkdirs();
+            }
+
+            String fileName = "note_audio_" + System.currentTimeMillis() + ".m4a";
+            currentRecordingFile = new File(audioDir, fileName);
+
+            mediaRecorder = new MediaRecorder();
+            mediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
+            mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+            mediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+            mediaRecorder.setAudioSamplingRate(44100);
+            mediaRecorder.setAudioEncodingBitRate(128000);
+            mediaRecorder.setOutputFile(currentRecordingFile.getAbsolutePath());
+            mediaRecorder.prepare();
+            mediaRecorder.start();
+
+            isRecording = true;
+            recordingStartTime = System.currentTimeMillis();
+            if (voiceInputButton != null) {
+                voiceInputButton.setColorFilter(Color.RED);
+            }
+            Toast.makeText(this, "开始录音", Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            android.util.Log.e("NotePlusAudio", "开始录音失败", e);
+            Toast.makeText(this, "开始录音失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            stopRecordingIfNeeded();
+        }
+    }
+
+    private void stopRecording() {
+        if (!isRecording) {
+            return;
+        }
+
+        try {
+            mediaRecorder.stop();
+        } catch (Exception e) {
+            android.util.Log.w("NotePlusAudio", "停止录音异常", e);
+        } finally {
+            stopRecordingIfNeeded();
+        }
+
+        long durationMs = Math.max(0, System.currentTimeMillis() - recordingStartTime);
+        if (currentRecordingFile != null && currentRecordingFile.exists()) {
+            long actualDuration = getAudioDuration(currentRecordingFile.getAbsolutePath());
+            if (actualDuration > 0) {
+                durationMs = actualDuration;
+            }
+            selectedAudioItems.add(new AudioAttachment(currentRecordingFile.getAbsolutePath(), durationMs));
+            updateSelectedAudioUi();
+            Toast.makeText(this, "录音完成", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void stopRecordingIfNeeded() {
+        if (mediaRecorder != null) {
+            try {
+                mediaRecorder.release();
+            } catch (Exception ignored) {
+            }
+            mediaRecorder = null;
+        }
+        isRecording = false;
+        recordingStartTime = 0L;
+        if (voiceInputButton != null) {
+            voiceInputButton.setColorFilter(null);
+        }
+    }
+
+    private long getAudioDuration(String path) {
+        if (path == null) {
+            return 0L;
+        }
+        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+        try {
+            retriever.setDataSource(path);
+            String duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+            if (duration != null) {
+                return Long.parseLong(duration);
+            }
+        } catch (Exception e) {
+            android.util.Log.w("NotePlusAudio", "读取音频时长失败", e);
+        } finally {
+            try {
+                retriever.release();
+            } catch (Exception ignored) {
+            }
+        }
+        return 0L;
+    }
+
+    private void updateSelectedAudioUi() {
+        if (audioCountText == null || selectedAudiosContainer == null) {
+            return;
+        }
+
+        int count = selectedAudioItems.size();
+        if (count <= 0) {
+            audioCountText.setVisibility(View.GONE);
+            selectedAudiosContainer.removeAllViews();
+            return;
+        }
+
+        audioCountText.setVisibility(View.VISIBLE);
+        audioCountText.setText("已录制 " + count + " 条语音");
+        selectedAudiosContainer.removeAllViews();
+
+        for (int i = 0; i < selectedAudioItems.size(); i++) {
+            AudioAttachment item = selectedAudioItems.get(i);
+            View itemView = getLayoutInflater().inflate(R.layout.item_audio_attachment, selectedAudiosContainer, false);
+
+            TextView nameText = itemView.findViewById(R.id.audioItemName);
+            TextView durationText = itemView.findViewById(R.id.audioItemDuration);
+            ImageButton playButton = itemView.findViewById(R.id.audioItemPlayPauseButton);
+            ImageButton exportButton = itemView.findViewById(R.id.audioItemExportButton);
+            ImageButton deleteButton = itemView.findViewById(R.id.audioItemDeleteButton);
+
+            nameText.setText("录音 " + (i + 1));
+            durationText.setText(formatDuration(item.getDurationMs()));
+
+            playButton.setOnClickListener(v -> togglePreviewPlayback(item.getPath(), playButton));
+            exportButton.setOnClickListener(v -> exportAudioFile(item.getPath()));
+            deleteButton.setOnClickListener(v -> {
+                stopPreviewPlayback();
+                selectedAudioItems.remove(item);
+                if (item.getPath() != null) {
+                    File file = new File(item.getPath());
+                    if (file.exists()) {
+                        file.delete();
+                    }
+                }
+                updateSelectedAudioUi();
+            });
+
+            selectedAudiosContainer.addView(itemView);
+        }
+    }
+
+    private void togglePreviewPlayback(String path, ImageButton playButton) {
+        if (path == null) {
+            return;
+        }
+
+        if (previewPlayer != null && path.equals(previewPlayingPath)) {
+            if (previewPlayer.isPlaying()) {
+                previewPlayer.pause();
+                playButton.setImageResource(R.drawable.ic_audio_play);
+            } else {
+                previewPlayer.start();
+                playButton.setImageResource(R.drawable.ic_audio_pause);
+            }
+            return;
+        }
+
+        stopPreviewPlayback();
+
+        try {
+            previewPlayer = new MediaPlayer();
+            previewPlayer.setDataSource(path);
+            previewPlayer.prepare();
+            previewPlayer.start();
+            previewPlayingPath = path;
+            previewPlayingButton = playButton;
+            playButton.setImageResource(R.drawable.ic_audio_pause);
+            previewPlayer.setOnCompletionListener(mp -> {
+                if (previewPlayingButton != null) {
+                    previewPlayingButton.setImageResource(R.drawable.ic_audio_play);
+                }
+                stopPreviewPlayback();
+            });
+            previewPlayer.setOnErrorListener((mp, what, extra) -> {
+                if (previewPlayingButton != null) {
+                    previewPlayingButton.setImageResource(R.drawable.ic_audio_play);
+                }
+                stopPreviewPlayback();
+                Toast.makeText(this, "音频播放失败", Toast.LENGTH_SHORT).show();
+                return true;
+            });
+        } catch (Exception e) {
+            android.util.Log.e("NotePlusAudio", "播放音频失败", e);
+            Toast.makeText(this, "播放音频失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void stopPreviewPlayback() {
+        if (previewPlayer != null) {
+            try {
+                previewPlayer.stop();
+            } catch (Exception ignored) {
+            }
+            try {
+                previewPlayer.release();
+            } catch (Exception ignored) {
+            }
+            previewPlayer = null;
+        }
+        previewPlayingPath = null;
+        if (previewPlayingButton != null) {
+            previewPlayingButton.setImageResource(R.drawable.ic_audio_play);
+        }
+        previewPlayingButton = null;
+    }
+
+    private void exportAudioFile(String path) {
+        if (path == null) {
+            return;
+        }
+        File file = new File(path);
+        if (!file.exists()) {
+            Toast.makeText(this, "音频文件不存在", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", file);
+        Intent intent = new Intent(Intent.ACTION_SEND);
+        intent.setType("audio/*");
+        intent.putExtra(Intent.EXTRA_STREAM, uri);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivity(Intent.createChooser(intent, "导出录音"));
+    }
+
+    private String formatDuration(long durationMs) {
+        long totalSeconds = durationMs / 1000;
+        long minutes = totalSeconds / 60;
+        long seconds = totalSeconds % 60;
+        return String.format(Locale.CHINA, "%02d:%02d", minutes, seconds);
+    }
+
     private void showRemoveImageDialog(int index) {
         if (index < 0 || index >= selectedImagePaths.size()) {
             return;
@@ -4312,6 +4602,23 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                                     sourceDb.delete(
                                             NoteDbHelper.TABLE_NOTE_IMAGES,
                                             NoteDbHelper.COLUMN_IMAGE_NOTE_ID + " = ?",
+                                            new String[]{String.valueOf(noteId)}
+                                    );
+
+                                    // 5.4 复制音频路径
+                                    List<AudioAttachment> audioItems = dbHelper.getNoteAudioItems(noteId);
+                                    if (audioItems != null && !audioItems.isEmpty()) {
+                                        for (AudioAttachment item : audioItems) {
+                                            if (item != null && item.getPath() != null) {
+                                                targetDbHelper.insertNoteAudio(newNoteId, item.getPath(), item.getDurationMs());
+                                            }
+                                        }
+                                    }
+
+                                    // 5.5 删除源项目的音频记录
+                                    sourceDb.delete(
+                                            NoteDbHelper.TABLE_NOTE_AUDIO,
+                                            NoteDbHelper.COLUMN_AUDIO_NOTE_ID + " = ?",
                                             new String[]{String.valueOf(noteId)}
                                     );
                                     

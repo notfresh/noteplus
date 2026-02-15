@@ -201,6 +201,22 @@
 				android:layout_height="wrap_content"
 				android:orientation="horizontal" />
 		</HorizontalScrollView>
+
+		<TextView
+			android:id="@+id/audioCountText"
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:layout_marginTop="6dp"
+			android:textSize="12sp"
+			android:textColor="#757575"
+			android:visibility="gone" />
+
+		<LinearLayout
+			android:id="@+id/selectedAudiosContainer"
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:layout_marginTop="4dp"
+			android:orientation="vertical" />
 	</LinearLayout>
 
 	<ListView

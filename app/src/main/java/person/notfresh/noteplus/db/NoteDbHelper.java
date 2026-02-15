@@ -6,9 +6,14 @@ import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.content.ContentValues;
 
+import java.util.ArrayList;
+import java.util.List;
+
+import person.notfresh.noteplus.core.model.AudioAttachment;
+
 public class NoteDbHelper extends SQLiteOpenHelper {
     private static final String DATABASE_NAME = "notes.db";
-    private static final int DATABASE_VERSION = 9;
+    private static final int DATABASE_VERSION = 10;
 
     public static final String TABLE_NOTES = "notes";
     public static final String COLUMN_ID = "_id";
@@ -25,6 +30,7 @@ public class NoteDbHelper extends SQLiteOpenHelper {
     public static final String TABLE_SETTINGS = "settings";
     public static final String TABLE_NOTE_COMMENTS = "note_comments";
     public static final String TABLE_NOTE_IMAGES = "note_images";
+    public static final String TABLE_NOTE_AUDIO = "note_audio";
 
     public static final String COLUMN_TAG_ID = "tag_id";
     public static final String COLUMN_TAG_NAME = "tag_name";
@@ -50,6 +56,11 @@ public class NoteDbHelper extends SQLiteOpenHelper {
     public static final String COLUMN_IMAGE_ID = "image_id";
     public static final String COLUMN_IMAGE_NOTE_ID = "note_id";
     public static final String COLUMN_IMAGE_PATH = "path";
+
+    public static final String COLUMN_AUDIO_ID = "audio_id";
+    public static final String COLUMN_AUDIO_NOTE_ID = "note_id";
+    public static final String COLUMN_AUDIO_PATH = "path";
+    public static final String COLUMN_AUDIO_DURATION = "duration_ms";
 
     public static final String KEY_TIME_RANGE_REQUIRED = "time_range_required";
     public static final String KEY_TIME_RANGE_DISPLAY = "time_range_display";
@@ -124,6 +135,14 @@ public class NoteDbHelper extends SQLiteOpenHelper {
             + COLUMN_IMAGE_PATH + " TEXT NOT NULL,"
             + "FOREIGN KEY (" + COLUMN_IMAGE_NOTE_ID + ") REFERENCES " + TABLE_NOTES + "(" + COLUMN_ID + ") ON DELETE CASCADE"
             + ")";
+
+        String CREATE_NOTE_AUDIO_TABLE = "CREATE TABLE " + TABLE_NOTE_AUDIO + "("
+                + COLUMN_AUDIO_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
+                + COLUMN_AUDIO_NOTE_ID + " INTEGER NOT NULL,"
+                + COLUMN_AUDIO_PATH + " TEXT NOT NULL,"
+                + COLUMN_AUDIO_DURATION + " INTEGER DEFAULT 0,"
+                + "FOREIGN KEY (" + COLUMN_AUDIO_NOTE_ID + ") REFERENCES " + TABLE_NOTES + "(" + COLUMN_ID + ") ON DELETE CASCADE"
+                + ")";
         
         database.execSQL(CREATE_TAGS_TABLE);
         database.execSQL(CREATE_TIME_RANGES_TABLE);
@@ -131,6 +150,7 @@ public class NoteDbHelper extends SQLiteOpenHelper {
         database.execSQL(CREATE_SETTINGS_TABLE);
         database.execSQL(CREATE_NOTE_COMMENTS_TABLE);
         database.execSQL(CREATE_NOTE_IMAGES_TABLE);
+        database.execSQL(CREATE_NOTE_AUDIO_TABLE);
         
         // 创建索引
         database.execSQL("CREATE INDEX IF NOT EXISTS idx_note_comments_note_id ON " 
@@ -276,6 +296,17 @@ public class NoteDbHelper extends SQLiteOpenHelper {
                     + ")";
             db.execSQL(CREATE_NOTE_IMAGES_TABLE);
         }
+
+        if (oldVersion < 10) {
+            String CREATE_NOTE_AUDIO_TABLE = "CREATE TABLE IF NOT EXISTS " + TABLE_NOTE_AUDIO + "("
+                    + COLUMN_AUDIO_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    + COLUMN_AUDIO_NOTE_ID + " INTEGER NOT NULL,"
+                    + COLUMN_AUDIO_PATH + " TEXT NOT NULL,"
+                    + COLUMN_AUDIO_DURATION + " INTEGER DEFAULT 0,"
+                    + "FOREIGN KEY (" + COLUMN_AUDIO_NOTE_ID + ") REFERENCES " + TABLE_NOTES + "(" + COLUMN_ID + ") ON DELETE CASCADE"
+                    + ")";
+            db.execSQL(CREATE_NOTE_AUDIO_TABLE);
+        }
     }
 
     /**
@@ -333,6 +364,68 @@ public class NoteDbHelper extends SQLiteOpenHelper {
                 TABLE_NOTE_IMAGES,
                 COLUMN_IMAGE_NOTE_ID + " = ? AND " + COLUMN_IMAGE_PATH + " = ?",
                 new String[]{String.valueOf(noteId), imagePath}
+        );
+    }
+
+    /**
+     * 插入笔记音频记录
+     */
+    public long insertNoteAudio(long noteId, String audioPath, long durationMs) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put(COLUMN_AUDIO_NOTE_ID, noteId);
+        values.put(COLUMN_AUDIO_PATH, audioPath);
+        values.put(COLUMN_AUDIO_DURATION, durationMs);
+        return db.insert(TABLE_NOTE_AUDIO, null, values);
+    }
+
+    /**
+     * 获取笔记音频列表
+     */
+    public List<AudioAttachment> getNoteAudioItems(long noteId) {
+        List<AudioAttachment> items = new ArrayList<>();
+        SQLiteDatabase db = this.getReadableDatabase();
+        Cursor cursor = db.query(
+                TABLE_NOTE_AUDIO,
+                new String[]{COLUMN_AUDIO_ID, COLUMN_AUDIO_PATH, COLUMN_AUDIO_DURATION},
+                COLUMN_AUDIO_NOTE_ID + " = ?",
+                new String[]{String.valueOf(noteId)},
+                null, null, null
+        );
+
+        if (cursor != null) {
+            while (cursor.moveToNext()) {
+                long id = cursor.getLong(0);
+                String path = cursor.getString(1);
+                long duration = cursor.getLong(2);
+                items.add(new AudioAttachment(id, path, duration));
+            }
+            cursor.close();
+        }
+        return items;
+    }
+
+    /**
+     * 删除单条音频记录
+     */
+    public int deleteNoteAudio(long noteId, String audioPath) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        return db.delete(
+                TABLE_NOTE_AUDIO,
+                COLUMN_AUDIO_NOTE_ID + " = ? AND " + COLUMN_AUDIO_PATH + " = ?",
+                new String[]{String.valueOf(noteId), audioPath}
+        );
+    }
+
+    /**
+     * 删除笔记的全部音频记录
+     */
+    public void deleteNoteAudios(long noteId) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        db.delete(
+                TABLE_NOTE_AUDIO,
+                COLUMN_AUDIO_NOTE_ID + " = ?",
+                new String[]{String.valueOf(noteId)}
         );
     }
 
@@ -963,6 +1056,13 @@ public class NoteDbHelper extends SQLiteOpenHelper {
             COLUMN_IMAGE_NOTE_ID + " = ?",
             new String[]{String.valueOf(noteId)}
         );
+
+        // 4.1 删除相关的音频记录
+        db.delete(
+            TABLE_NOTE_AUDIO,
+            COLUMN_AUDIO_NOTE_ID + " = ?",
+            new String[]{String.valueOf(noteId)}
+        );
         
         // 5. 删除记录本身
         db.delete(
@@ -983,6 +1083,7 @@ public class NoteDbHelper extends SQLiteOpenHelper {
         SQLiteDatabase db = this.getWritableDatabase();
 
         java.util.List<String> imagePaths = getNoteImagePaths(noteId);
+        List<AudioAttachment> audioItems = getNoteAudioItems(noteId);
         
         // 先检查笔记是否存在
         Cursor cursor = db.query(
@@ -1027,6 +1128,19 @@ public class NoteDbHelper extends SQLiteOpenHelper {
                 if (imageFile.exists()) {
                     // 忽略删除失败
                     imageFile.delete();
+                }
+            }
+        }
+
+        if (result > 0 && audioItems != null && !audioItems.isEmpty()) {
+            for (AudioAttachment item : audioItems) {
+                String audioPath = item.getPath();
+                if (audioPath == null) {
+                    continue;
+                }
+                java.io.File audioFile = new java.io.File(audioPath);
+                if (audioFile.exists()) {
+                    audioFile.delete();
                 }
             }
         }

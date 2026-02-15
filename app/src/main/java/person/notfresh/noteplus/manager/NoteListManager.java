@@ -5,9 +5,12 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.Intent;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Color;
+import android.media.MediaPlayer;
+import android.net.Uri;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -20,6 +23,8 @@ import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.ImageButton;
+import androidx.core.content.FileProvider;
 import androidx.fragment.app.FragmentActivity;
 
 import java.text.SimpleDateFormat;
@@ -41,6 +46,7 @@ import person.notfresh.noteplus.db.NoteDbHelper;
 import person.notfresh.noteplus.manager.INoteListCallback;
 import person.notfresh.noteplus.util.DisplayUtil;
 import person.notfresh.noteplus.util.StringUtil;
+import person.notfresh.noteplus.core.model.AudioAttachment;
 
 /**
  * 笔记列表管理器
@@ -60,6 +66,10 @@ public class NoteListManager {
     private Set<Long> hiddenNoteIds = new HashSet<>();
     private boolean isMultiSelectMode = false;
     private Set<Long> selectedNoteIds = new HashSet<>();
+
+    private MediaPlayer audioPlayer;
+    private String playingAudioPath;
+    private ImageButton playingAudioButton;
     
     /**
      * 初始化管理器
@@ -686,6 +696,9 @@ public class NoteListManager {
 
         // 添加图片信息
         addImagesInfo(extrasContainer, noteId);
+
+        // 添加音频信息
+        addAudioInfo(extrasContainer, noteId);
         
         // 添加追加内容信息
         addCommentsInfo(extrasContainer, noteId);
@@ -978,6 +991,170 @@ public class NoteListManager {
         options.inJustDecodeBounds = false;
         options.inSampleSize = inSampleSize;
         return android.graphics.BitmapFactory.decodeFile(path, options);
+    }
+
+    /**
+     * 添加音频信息到列表项
+     */
+    private void addAudioInfo(LinearLayout container, long noteId) {
+        if (callback == null) {
+            return;
+        }
+
+        NoteDbHelper dbHelper = callback.getDbHelper();
+        Context context = callback.getContext();
+        if (dbHelper == null || context == null) {
+            return;
+        }
+
+        List<AudioAttachment> audioItems = dbHelper.getNoteAudioItems(noteId);
+        if (audioItems == null || audioItems.isEmpty()) {
+            return;
+        }
+
+        LinearLayout audioLayout = new LinearLayout(context);
+        audioLayout.setOrientation(LinearLayout.VERTICAL);
+        int padding = DisplayUtil.dpToPx(context, 4);
+        audioLayout.setPadding(padding, padding, padding, padding);
+
+        TextView label = new TextView(context);
+        label.setText("录音: ");
+        label.setTypeface(null, android.graphics.Typeface.BOLD);
+        audioLayout.addView(label);
+
+        for (int i = 0; i < audioItems.size(); i++) {
+            AudioAttachment item = audioItems.get(i);
+            View itemView = LayoutInflater.from(context).inflate(R.layout.item_audio_attachment, audioLayout, false);
+
+            TextView nameText = itemView.findViewById(R.id.audioItemName);
+            TextView durationText = itemView.findViewById(R.id.audioItemDuration);
+            ImageButton playButton = itemView.findViewById(R.id.audioItemPlayPauseButton);
+            ImageButton exportButton = itemView.findViewById(R.id.audioItemExportButton);
+            ImageButton deleteButton = itemView.findViewById(R.id.audioItemDeleteButton);
+
+            nameText.setText("录音 " + (i + 1));
+            durationText.setText(formatDuration(item.getDurationMs()));
+
+            playButton.setOnClickListener(v -> toggleAudioPlayback(context, item.getPath(), playButton));
+            exportButton.setOnClickListener(v -> exportAudioFile(context, item.getPath()));
+            deleteButton.setOnClickListener(v -> showRemoveAudioDialog(context, noteId, item));
+
+            audioLayout.addView(itemView);
+        }
+
+        container.addView(audioLayout);
+    }
+
+    private void showRemoveAudioDialog(Context context, long noteId, AudioAttachment item) {
+        if (context == null || item == null || item.getPath() == null) {
+            return;
+        }
+        NoteDbHelper dbHelper = callback != null ? callback.getDbHelper() : null;
+        new android.app.AlertDialog.Builder(context)
+                .setTitle("删除录音")
+                .setMessage("确定要删除这条录音吗？")
+                .setPositiveButton("删除", (dialog, which) -> {
+                    if (dbHelper != null) {
+                        dbHelper.deleteNoteAudio(noteId, item.getPath());
+                    }
+                    java.io.File audioFile = new java.io.File(item.getPath());
+                    if (audioFile.exists()) {
+                        audioFile.delete();
+                    }
+                    refreshNoteView(noteId);
+                    Toast.makeText(context, "录音已删除", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private void toggleAudioPlayback(Context context, String path, ImageButton playButton) {
+        if (path == null || context == null) {
+            return;
+        }
+
+        if (audioPlayer != null && path.equals(playingAudioPath)) {
+            if (audioPlayer.isPlaying()) {
+                audioPlayer.pause();
+                playButton.setImageResource(R.drawable.ic_audio_play);
+            } else {
+                audioPlayer.start();
+                playButton.setImageResource(R.drawable.ic_audio_pause);
+            }
+            return;
+        }
+
+        stopAudioPlayer();
+
+        try {
+            audioPlayer = new MediaPlayer();
+            audioPlayer.setDataSource(path);
+            audioPlayer.prepare();
+            audioPlayer.start();
+            playingAudioPath = path;
+            playingAudioButton = playButton;
+            playButton.setImageResource(R.drawable.ic_audio_pause);
+            audioPlayer.setOnCompletionListener(mp -> {
+                if (playingAudioButton != null) {
+                    playingAudioButton.setImageResource(R.drawable.ic_audio_play);
+                }
+                stopAudioPlayer();
+            });
+            audioPlayer.setOnErrorListener((mp, what, extra) -> {
+                if (playingAudioButton != null) {
+                    playingAudioButton.setImageResource(R.drawable.ic_audio_play);
+                }
+                stopAudioPlayer();
+                Toast.makeText(context, "音频播放失败", Toast.LENGTH_SHORT).show();
+                return true;
+            });
+        } catch (Exception e) {
+            android.util.Log.e("NoteListManager", "播放音频失败", e);
+            Toast.makeText(context, "播放音频失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void stopAudioPlayer() {
+        if (audioPlayer != null) {
+            try {
+                audioPlayer.stop();
+            } catch (Exception ignored) {
+            }
+            try {
+                audioPlayer.release();
+            } catch (Exception ignored) {
+            }
+            audioPlayer = null;
+        }
+        playingAudioPath = null;
+        if (playingAudioButton != null) {
+            playingAudioButton.setImageResource(R.drawable.ic_audio_play);
+        }
+        playingAudioButton = null;
+    }
+
+    private void exportAudioFile(Context context, String path) {
+        if (context == null || path == null) {
+            return;
+        }
+        java.io.File file = new java.io.File(path);
+        if (!file.exists()) {
+            Toast.makeText(context, "音频文件不存在", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Uri uri = FileProvider.getUriForFile(context, context.getPackageName() + ".fileprovider", file);
+        Intent intent = new Intent(Intent.ACTION_SEND);
+        intent.setType("audio/*");
+        intent.putExtra(Intent.EXTRA_STREAM, uri);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        context.startActivity(Intent.createChooser(intent, "导出录音"));
+    }
+
+    private String formatDuration(long durationMs) {
+        long totalSeconds = durationMs / 1000;
+        long minutes = totalSeconds / 60;
+        long seconds = totalSeconds % 60;
+        return String.format(Locale.CHINA, "%02d:%02d", minutes, seconds);
     }
     
     /**
