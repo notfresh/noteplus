@@ -27,6 +27,7 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Color;
+import android.media.AudioManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
@@ -176,6 +177,9 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     private long recordingStartTime = 0L;
     private Handler recordingTimerHandler = new Handler(Looper.getMainLooper());
     private Runnable recordingTimerRunnable;
+    private AudioManager audioManager;
+    private AudioManager.OnAudioFocusChangeListener recordingAudioFocusChangeListener;
+    private boolean hasRecordingAudioFocus = false;
 
     private MediaPlayer previewPlayer;
     private String previewPlayingPath;
@@ -4183,6 +4187,10 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         }
 
         try {
+            if (!requestRecordingAudioFocus()) {
+                Toast.makeText(this, "无法获取音频焦点，录音未开始", Toast.LENGTH_SHORT).show();
+                return;
+            }
             File audioDir = new File(getFilesDir(), "note_audio");
             if (!audioDir.exists()) {
                 audioDir.mkdirs();
@@ -4246,6 +4254,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     }
 
     private void stopRecordingIfNeeded() {
+        stopRecordingTimer();
         if (mediaRecorder != null) {
             try {
                 mediaRecorder.release();
@@ -4257,6 +4266,43 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         recordingStartTime = 0L;
         if (voiceInputButton != null) {
             voiceInputButton.setColorFilter(null);
+        }
+        abandonRecordingAudioFocus();
+    }
+
+    private boolean requestRecordingAudioFocus() {
+        if (audioManager == null) {
+            audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        }
+        if (audioManager == null) {
+            return true;
+        }
+        if (recordingAudioFocusChangeListener == null) {
+            recordingAudioFocusChangeListener = focusChange -> {
+                if (focusChange == AudioManager.AUDIOFOCUS_LOSS
+                        || focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                    if (isRecording) {
+                        runOnUiThread(() -> {
+                            Toast.makeText(this, "录音已停止（失去音频焦点）", Toast.LENGTH_SHORT).show();
+                            stopRecording();
+                        });
+                    }
+                }
+            };
+        }
+        int result = audioManager.requestAudioFocus(
+                recordingAudioFocusChangeListener,
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+        );
+        hasRecordingAudioFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+        return hasRecordingAudioFocus;
+    }
+
+    private void abandonRecordingAudioFocus() {
+        if (audioManager != null && hasRecordingAudioFocus) {
+            audioManager.abandonAudioFocus(recordingAudioFocusChangeListener);
+            hasRecordingAudioFocus = false;
         }
     }
 
