@@ -3019,10 +3019,97 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             dialog.dismiss();
         });
         
-        // 设置追加内容按钮事件
+        // 设置追加内容按钮事件，添加评论成功后刷新列表
         btnAddComment.setOnClickListener(v -> {
-            // TODO: 实现追加内容功能（可选）
-            Toast.makeText(this, "追加内容功能待实现", Toast.LENGTH_SHORT).show();
+            noteListManager.showAddCommentDialog(this, note.getId(), null, noteDbHelper, () -> {
+                // 评论添加成功，刷新评论列表
+                Cursor commentCursor = noteDbHelper.getCommentsForNote(note.getId());
+                List<Comment> updatedComments = new java.util.ArrayList<>();
+                if (commentCursor != null) {
+                    int commentIdIndex = commentCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_ID);
+                    int parentCommentIdIndex = commentCursor.getColumnIndex(NoteDbHelper.COLUMN_PARENT_COMMENT_ID);
+                    int contentIndex = commentCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_CONTENT);
+                    int timestampIndex = commentCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_TIMESTAMP);
+                    int costIndex = commentCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_COST);
+                    
+                    while (commentCursor.moveToNext()) {
+                        long commentId = commentCursor.getLong(commentIdIndex);
+                        Long parentCommentId = null;
+                        if (parentCommentIdIndex >= 0 && !commentCursor.isNull(parentCommentIdIndex)) {
+                            parentCommentId = commentCursor.getLong(parentCommentIdIndex);
+                        }
+                        String commentContent = commentCursor.getString(contentIndex);
+                        long timestamp = commentCursor.getLong(timestampIndex);
+                        double cost = commentCursor.getDouble(costIndex);
+                        
+                        Comment comment = new Comment(
+                            commentId,
+                            note.getId(),
+                            parentCommentId,
+                            commentContent,
+                            timestamp,
+                            cost,
+                            note.getProjectName(),
+                            person.notfresh.noteplus.core.model.TimelineItemType.COMMENT
+                        );
+                        updatedComments.add(comment);
+                    }
+                    commentCursor.close();
+                }
+                commentAdapter.updateComments(updatedComments);
+                commentAdapter.notifyDataSetChanged();
+                
+                // 刷新完成后，重新计算ListView高度
+                detailCommentList.post(() -> {
+                    if (detailCommentList.getAdapter() != null) {
+                        android.widget.BaseAdapter adapter = (android.widget.BaseAdapter) detailCommentList.getAdapter();
+                        int itemCount = adapter.getCount();
+                        
+                        if (itemCount > 0) {
+                            // 重新计算高度
+                            int totalHeight = 0;
+                            int dividerHeight = detailCommentList.getDividerHeight();
+                            
+                            // 使用第一个可见项或第一个项作为模板
+                            View templateView = null;
+                            if (detailCommentList.getChildCount() > 0) {
+                                templateView = detailCommentList.getChildAt(0);
+                            }
+                            
+                            if (templateView != null) {
+                                int itemHeight = templateView.getMeasuredHeight();
+                                if (itemHeight <= 0) {
+                                    // 如果测量高度为0，重新测量
+                                    int itemWidth = detailCommentList.getWidth() - 
+                                                   detailCommentList.getPaddingLeft() - 
+                                                   detailCommentList.getPaddingRight();
+                                    int widthMeasureSpec = View.MeasureSpec.makeMeasureSpec(
+                                        itemWidth > 0 ? itemWidth : ViewGroup.LayoutParams.WRAP_CONTENT,
+                                        itemWidth > 0 ? View.MeasureSpec.EXACTLY : View.MeasureSpec.UNSPECIFIED);
+                                    int heightMeasureSpec = View.MeasureSpec.makeMeasureSpec(
+                                        0, View.MeasureSpec.UNSPECIFIED);
+                                    templateView.measure(widthMeasureSpec, heightMeasureSpec);
+                                    itemHeight = templateView.getMeasuredHeight();
+                                }
+                                
+                                // 计算总高度
+                                totalHeight = itemHeight * itemCount + dividerHeight * Math.max(0, itemCount - 1);
+                                totalHeight += detailCommentList.getPaddingTop() + detailCommentList.getPaddingBottom();
+                                
+                                // 确保不小于minHeight
+                                int minHeight = (int) (150 * getResources().getDisplayMetrics().density);
+                                totalHeight = Math.max(totalHeight, minHeight);
+                                
+                                ViewGroup.LayoutParams params = detailCommentList.getLayoutParams();
+                                if (params != null) {
+                                    params.height = totalHeight;
+                                    detailCommentList.setLayoutParams(params);
+                                }
+                            }
+                        }
+                    }
+                });
+            });
         });
         
         // 显示对话框
@@ -3138,6 +3225,16 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         
         public NoteDetailCommentAdapter(List<Comment> comments) {
             this.comments = comments;
+        }
+        
+        /**
+         * 更新评论列表数据
+         */
+        public void updateComments(List<Comment> newComments) {
+            comments.clear();
+            if (newComments != null) {
+                comments.addAll(newComments);
+            }
         }
         
         @Override

@@ -1745,13 +1745,49 @@ public class NoteListManager {
      * 显示添加追加内容对话框
      * 从 MainActivity.showAddCommentDialog() 迁移
      */
-    private void showAddCommentDialog(long noteId, Long parentCommentId) {
+    /**
+     * 显示添加追加内容对话框
+     * 从 MainActivity.showAddCommentDialog() 迁移
+     */
+    public void showAddCommentDialog(long noteId, Long parentCommentId) {
         if (callback == null) {
             return;
         }
         
         Context context = callback.getContext();
         if (context == null) {
+            return;
+        }
+        
+        NoteDbHelper dbHelper = callback.getDbHelper();
+        if (dbHelper == null) {
+            return;
+        }
+        
+        showAddCommentDialog(context, noteId, parentCommentId, dbHelper);
+    }
+    
+    /**
+     * 显示添加追加内容对话框（重载方法，可供外部调用）
+     * @param context Android Context
+     * @param noteId 笔记ID
+     * @param parentCommentId 父评论ID（null表示新建评论）
+     * @param dbHelper 数据库Helper
+     */
+    public void showAddCommentDialog(Context context, long noteId, Long parentCommentId, NoteDbHelper dbHelper) {
+        showAddCommentDialog(context, noteId, parentCommentId, dbHelper, null);
+    }
+    
+    /**
+     * 显示添加追加内容对话框（重载方法，可供外部调用）
+     * @param context Android Context
+     * @param noteId 笔记ID
+     * @param parentCommentId 父评论ID（null表示新建评论）
+     * @param dbHelper 数据库Helper
+     * @param onCommentAdded 评论添加成功的回调，null表示不刷新
+     */
+    public void showAddCommentDialog(Context context, long noteId, Long parentCommentId, NoteDbHelper dbHelper, Runnable onCommentAdded) {
+        if (context == null || dbHelper == null) {
             return;
         }
         
@@ -1798,7 +1834,16 @@ public class NoteListManager {
             }
             
             // 保存追加内容
-            addComment(noteId, parentCommentId, content, cost);
+            long commentId = dbHelper.addComment(noteId, parentCommentId, content, cost);
+            if (commentId != -1) {
+                Toast.makeText(context, "追加成功", Toast.LENGTH_SHORT).show();
+                // 回调刷新UI
+                if (onCommentAdded != null) {
+                    onCommentAdded.run();
+                }
+            } else {
+                Toast.makeText(context, "追加失败", Toast.LENGTH_SHORT).show();
+            }
         });
         
         builder.setNegativeButton("取消", null);
