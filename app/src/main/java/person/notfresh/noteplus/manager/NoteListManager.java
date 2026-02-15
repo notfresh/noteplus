@@ -11,6 +11,8 @@ import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Color;
 import android.media.MediaPlayer;
 import android.net.Uri;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -21,6 +23,7 @@ import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ListView;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.widget.ImageButton;
@@ -70,6 +73,12 @@ public class NoteListManager {
     private MediaPlayer audioPlayer;
     private String playingAudioPath;
     private ImageButton playingAudioButton;
+    private SeekBar playingAudioSeekBar;
+    private TextView playingAudioCurrentTime;
+    private TextView playingAudioTotalTime;
+    private Handler audioProgressHandler = new Handler(Looper.getMainLooper());
+    private Runnable audioProgressRunnable;
+    private final java.util.Map<String, Integer> audioProgressMap = new java.util.HashMap<>();
     
     /**
      * 初始化管理器
@@ -1028,16 +1037,33 @@ public class NoteListManager {
 
             TextView nameText = itemView.findViewById(R.id.audioItemName);
             TextView durationText = itemView.findViewById(R.id.audioItemDuration);
+            TextView currentTimeText = itemView.findViewById(R.id.audioItemCurrentTime);
+            SeekBar seekBar = itemView.findViewById(R.id.audioItemSeekBar);
             ImageButton playButton = itemView.findViewById(R.id.audioItemPlayPauseButton);
             ImageButton exportButton = itemView.findViewById(R.id.audioItemExportButton);
             ImageButton deleteButton = itemView.findViewById(R.id.audioItemDeleteButton);
 
             nameText.setText("录音 " + (i + 1));
             durationText.setText(formatDuration(item.getDurationMs()));
+            int savedProgress = 0;
+            if (item.getPath() != null && audioProgressMap.containsKey(item.getPath())) {
+                savedProgress = audioProgressMap.get(item.getPath());
+            }
+            currentTimeText.setText(formatDuration(savedProgress));
+            seekBar.setMax((int) Math.max(1, item.getDurationMs()));
+            seekBar.setProgress(savedProgress);
 
-            playButton.setOnClickListener(v -> toggleAudioPlayback(context, item.getPath(), playButton));
+            playButton.setOnClickListener(v -> toggleAudioPlayback(context, item.getPath(), playButton, seekBar, currentTimeText, durationText));
             exportButton.setOnClickListener(v -> exportAudioFile(context, item.getPath()));
             deleteButton.setOnClickListener(v -> showRemoveAudioDialog(context, noteId, item));
+
+            if (item.getPath() != null && item.getPath().equals(playingAudioPath)) {
+                playingAudioButton = playButton;
+                playingAudioSeekBar = seekBar;
+                playingAudioCurrentTime = currentTimeText;
+                playingAudioTotalTime = durationText;
+                playButton.setImageResource(R.drawable.ic_audio_pause);
+            }
 
             audioLayout.addView(itemView);
         }
@@ -1068,7 +1094,8 @@ public class NoteListManager {
                 .show();
     }
 
-    private void toggleAudioPlayback(Context context, String path, ImageButton playButton) {
+    private void toggleAudioPlayback(Context context, String path, ImageButton playButton,
+                                     SeekBar seekBar, TextView currentTimeText, TextView totalTimeText) {
         if (path == null || context == null) {
             return;
         }
@@ -1077,9 +1104,11 @@ public class NoteListManager {
             if (audioPlayer.isPlaying()) {
                 audioPlayer.pause();
                 playButton.setImageResource(R.drawable.ic_audio_play);
+                stopAudioProgressUpdates();
             } else {
                 audioPlayer.start();
                 playButton.setImageResource(R.drawable.ic_audio_pause);
+                startAudioProgressUpdates();
             }
             return;
         }
@@ -1093,17 +1122,61 @@ public class NoteListManager {
             audioPlayer.start();
             playingAudioPath = path;
             playingAudioButton = playButton;
+            playingAudioSeekBar = seekBar;
+            playingAudioCurrentTime = currentTimeText;
+            playingAudioTotalTime = totalTimeText;
             playButton.setImageResource(R.drawable.ic_audio_pause);
+            int duration = audioPlayer.getDuration();
+            if (playingAudioSeekBar != null) {
+                playingAudioSeekBar.setMax(Math.max(1, duration));
+                playingAudioSeekBar.setProgress(0);
+            }
+            if (playingAudioTotalTime != null) {
+                playingAudioTotalTime.setText(formatDuration(duration));
+            }
+            if (playingAudioCurrentTime != null) {
+                playingAudioCurrentTime.setText("00:00");
+            }
+            if (playingAudioSeekBar != null) {
+                playingAudioSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                    @Override
+                    public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                        if (fromUser && audioPlayer != null) {
+                            audioPlayer.seekTo(progress);
+                            if (playingAudioCurrentTime != null) {
+                                playingAudioCurrentTime.setText(formatDuration(progress));
+                            }
+                            if (playingAudioPath != null) {
+                                audioProgressMap.put(playingAudioPath, progress);
+                            }
+                        }
+                    }
+
+                    @Override
+                    public void onStartTrackingTouch(SeekBar seekBar) {
+                    }
+
+                    @Override
+                    public void onStopTrackingTouch(SeekBar seekBar) {
+                    }
+                });
+            }
+            startAudioProgressUpdates();
             audioPlayer.setOnCompletionListener(mp -> {
                 if (playingAudioButton != null) {
                     playingAudioButton.setImageResource(R.drawable.ic_audio_play);
                 }
+                if (playingAudioPath != null) {
+                    audioProgressMap.put(playingAudioPath, 0);
+                }
+                stopAudioProgressUpdates();
                 stopAudioPlayer();
             });
             audioPlayer.setOnErrorListener((mp, what, extra) -> {
                 if (playingAudioButton != null) {
                     playingAudioButton.setImageResource(R.drawable.ic_audio_play);
                 }
+                stopAudioProgressUpdates();
                 stopAudioPlayer();
                 Toast.makeText(context, "音频播放失败", Toast.LENGTH_SHORT).show();
                 return true;
@@ -1130,7 +1203,44 @@ public class NoteListManager {
         if (playingAudioButton != null) {
             playingAudioButton.setImageResource(R.drawable.ic_audio_play);
         }
+        if (playingAudioSeekBar != null) {
+            playingAudioSeekBar.setProgress(0);
+        }
+        if (playingAudioCurrentTime != null) {
+            playingAudioCurrentTime.setText("00:00");
+        }
         playingAudioButton = null;
+        playingAudioSeekBar = null;
+        playingAudioCurrentTime = null;
+        playingAudioTotalTime = null;
+        stopAudioProgressUpdates();
+    }
+
+    private void startAudioProgressUpdates() {
+        stopAudioProgressUpdates();
+        audioProgressRunnable = () -> {
+            if (audioPlayer != null && audioPlayer.isPlaying()) {
+                int position = audioPlayer.getCurrentPosition();
+                if (playingAudioSeekBar != null) {
+                    playingAudioSeekBar.setProgress(position);
+                }
+                if (playingAudioCurrentTime != null) {
+                    playingAudioCurrentTime.setText(formatDuration(position));
+                }
+                if (playingAudioPath != null) {
+                    audioProgressMap.put(playingAudioPath, position);
+                }
+                audioProgressHandler.postDelayed(audioProgressRunnable, 300);
+            }
+        };
+        audioProgressHandler.post(audioProgressRunnable);
+    }
+
+    private void stopAudioProgressUpdates() {
+        if (audioProgressRunnable != null) {
+            audioProgressHandler.removeCallbacks(audioProgressRunnable);
+            audioProgressRunnable = null;
+        }
     }
 
     private void exportAudioFile(Context context, String path) {

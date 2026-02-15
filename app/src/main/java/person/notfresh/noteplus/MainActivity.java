@@ -178,6 +178,13 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     private MediaPlayer previewPlayer;
     private String previewPlayingPath;
     private ImageButton previewPlayingButton;
+    private SeekBar previewPlayingSeekBar;
+    private TextView previewPlayingCurrentTime;
+    private TextView previewPlayingTotalTime;
+    private Handler previewProgressHandler = new Handler(Looper.getMainLooper());
+    private Runnable previewProgressRunnable;
+
+    private Map<String, DraftState> draftStateByProject = new HashMap<>();
 
     private Calendar startCalendar = Calendar.getInstance();
     private Calendar endCalendar = Calendar.getInstance();
@@ -666,6 +673,12 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             
             // 清空表单
             clearForm();
+
+            // 清空当前项目草稿缓存
+            String currentProject = projectManager != null ? projectManager.getCurrentProject() : null;
+            if (currentProject != null) {
+                draftStateByProject.remove(currentProject);
+            }
             
             // 重新加载列表
             if (noteListManager != null) {
@@ -1484,6 +1497,8 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
      * 切换到指定项目
      */
     private void switchProject(String projectName) {
+        String currentProject = projectManager != null ? projectManager.getCurrentProject() : null;
+        cacheDraftForProject(currentProject);
         // 显示加载指示器
         ProgressDialog progressDialog = new ProgressDialog(this);
         progressDialog.setMessage("正在切换项目...");
@@ -1507,6 +1522,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                 runOnUiThread(() -> {
                     updateTitle();
                     clearForm();
+                    restoreDraftForProject(projectName);
                     
                     // 重新加载新项目的设置
                     loadSettings();
@@ -1539,6 +1555,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                     Toast.makeText(MainActivity.this, 
                             "切换项目失败", 
                             Toast.LENGTH_SHORT).show();
+                    restoreDraftForProject(currentProject);
                 });
             }
         }).start();
@@ -3915,14 +3932,19 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
 
             TextView nameText = itemView.findViewById(R.id.audioItemName);
             TextView durationText = itemView.findViewById(R.id.audioItemDuration);
+            TextView currentTimeText = itemView.findViewById(R.id.audioItemCurrentTime);
+            SeekBar seekBar = itemView.findViewById(R.id.audioItemSeekBar);
             ImageButton playButton = itemView.findViewById(R.id.audioItemPlayPauseButton);
             ImageButton exportButton = itemView.findViewById(R.id.audioItemExportButton);
             ImageButton deleteButton = itemView.findViewById(R.id.audioItemDeleteButton);
 
             nameText.setText("录音 " + (i + 1));
             durationText.setText(formatDuration(item.getDurationMs()));
+            currentTimeText.setText("00:00");
+            seekBar.setMax((int) Math.max(1, item.getDurationMs()));
+            seekBar.setProgress(0);
 
-            playButton.setOnClickListener(v -> togglePreviewPlayback(item.getPath(), playButton));
+            playButton.setOnClickListener(v -> togglePreviewPlayback(item.getPath(), playButton, seekBar, currentTimeText, durationText));
             exportButton.setOnClickListener(v -> exportAudioFile(item.getPath()));
             deleteButton.setOnClickListener(v -> {
                 stopPreviewPlayback();
@@ -3940,7 +3962,115 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         }
     }
 
-    private void togglePreviewPlayback(String path, ImageButton playButton) {
+    private static class DraftState {
+        String content;
+        String costText;
+        boolean hasTimeRange;
+        long startTimeMillis;
+        long endTimeMillis;
+        List<Tag> tags = new ArrayList<>();
+        List<String> imagePaths = new ArrayList<>();
+        List<AudioAttachment> audioItems = new ArrayList<>();
+    }
+
+    private void cacheDraftForProject(String projectName) {
+        if (projectName == null) {
+            return;
+        }
+
+        DraftState state = new DraftState();
+        state.content = momentEditText != null ? momentEditText.getText().toString() : "";
+        state.costText = costEditText != null ? costEditText.getText().toString() : "";
+        state.hasTimeRange = hasTimeRange;
+        state.startTimeMillis = startCalendar != null ? startCalendar.getTimeInMillis() : 0L;
+        state.endTimeMillis = endCalendar != null ? endCalendar.getTimeInMillis() : 0L;
+        state.tags = selectedTags != null ? new ArrayList<>(selectedTags) : new ArrayList<>();
+        state.imagePaths = selectedImagePaths != null ? new ArrayList<>(selectedImagePaths) : new ArrayList<>();
+        state.audioItems = selectedAudioItems != null ? new ArrayList<>(selectedAudioItems) : new ArrayList<>();
+
+        boolean hasContent = state.content != null && !state.content.trim().isEmpty();
+        boolean hasCost = state.costText != null && !state.costText.trim().isEmpty();
+        boolean hasTags = state.tags != null && !state.tags.isEmpty();
+        boolean hasImages = state.imagePaths != null && !state.imagePaths.isEmpty();
+        boolean hasAudio = state.audioItems != null && !state.audioItems.isEmpty();
+        boolean hasRange = state.hasTimeRange;
+
+        if (hasContent || hasCost || hasTags || hasImages || hasAudio || hasRange) {
+            draftStateByProject.put(projectName, state);
+        } else {
+            draftStateByProject.remove(projectName);
+        }
+    }
+
+    private void restoreDraftForProject(String projectName) {
+        if (projectName == null) {
+            return;
+        }
+
+        DraftState state = draftStateByProject.get(projectName);
+        if (state == null) {
+            return;
+        }
+
+        if (momentEditText != null) {
+            momentEditText.setText(state.content != null ? state.content : "");
+        }
+        if (costEditText != null) {
+            costEditText.setText(state.costText != null ? state.costText : "");
+        }
+
+        hasTimeRange = state.hasTimeRange;
+        if (state.hasTimeRange) {
+            startCalendar = Calendar.getInstance();
+            endCalendar = Calendar.getInstance();
+            startCalendar.setTimeInMillis(state.startTimeMillis);
+            endCalendar.setTimeInMillis(state.endTimeMillis);
+            if (startTimeText != null) {
+                startTimeText.setText(timeFormat.format(startCalendar.getTime()));
+            }
+            if (endTimeText != null) {
+                endTimeText.setText(timeFormat.format(endCalendar.getTime()));
+            }
+        } else {
+            if (startTimeText != null) {
+                startTimeText.setText("点击选择");
+            }
+            if (endTimeText != null) {
+                endTimeText.setText("点击选择");
+            }
+        }
+
+        if (selectedTags != null) {
+            selectedTags.clear();
+        }
+        if (tagChipGroup != null) {
+            tagChipGroup.removeAllViews();
+        }
+        if (state.tags != null) {
+            for (Tag tag : state.tags) {
+                addTagChip(tag);
+            }
+        }
+
+        if (selectedImagePaths != null) {
+            selectedImagePaths.clear();
+            if (state.imagePaths != null) {
+                selectedImagePaths.addAll(state.imagePaths);
+            }
+        }
+        updateSelectedImagesUi();
+
+        if (selectedAudioItems != null) {
+            selectedAudioItems.clear();
+            if (state.audioItems != null) {
+                selectedAudioItems.addAll(state.audioItems);
+            }
+        }
+        updateSelectedAudioUi();
+    }
+
+    private void togglePreviewPlayback(String path, ImageButton playButton, SeekBar seekBar,
+                                       TextView currentTimeText, TextView totalTimeText) {
         if (path == null) {
             return;
         }
@@ -3949,9 +4079,11 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             if (previewPlayer.isPlaying()) {
                 previewPlayer.pause();
                 playButton.setImageResource(R.drawable.ic_audio_play);
+                stopPreviewProgressUpdates();
             } else {
                 previewPlayer.start();
                 playButton.setImageResource(R.drawable.ic_audio_pause);
+                startPreviewProgressUpdates();
             }
             return;
         }
@@ -3965,17 +4097,55 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             previewPlayer.start();
             previewPlayingPath = path;
             previewPlayingButton = playButton;
+            previewPlayingSeekBar = seekBar;
+            previewPlayingCurrentTime = currentTimeText;
+            previewPlayingTotalTime = totalTimeText;
             playButton.setImageResource(R.drawable.ic_audio_pause);
+            int duration = previewPlayer.getDuration();
+            if (previewPlayingSeekBar != null) {
+                previewPlayingSeekBar.setMax(Math.max(1, duration));
+                previewPlayingSeekBar.setProgress(0);
+            }
+            if (previewPlayingTotalTime != null) {
+                previewPlayingTotalTime.setText(formatDuration(duration));
+            }
+            if (previewPlayingCurrentTime != null) {
+                previewPlayingCurrentTime.setText("00:00");
+            }
+            if (previewPlayingSeekBar != null) {
+                previewPlayingSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                    @Override
+                    public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                        if (fromUser && previewPlayer != null) {
+                            previewPlayer.seekTo(progress);
+                            if (previewPlayingCurrentTime != null) {
+                                previewPlayingCurrentTime.setText(formatDuration(progress));
+                            }
+                        }
+                    }
+
+                    @Override
+                    public void onStartTrackingTouch(SeekBar seekBar) {
+                    }
+
+                    @Override
+                    public void onStopTrackingTouch(SeekBar seekBar) {
+                    }
+                });
+            }
+            startPreviewProgressUpdates();
             previewPlayer.setOnCompletionListener(mp -> {
                 if (previewPlayingButton != null) {
                     previewPlayingButton.setImageResource(R.drawable.ic_audio_play);
                 }
+                stopPreviewProgressUpdates();
                 stopPreviewPlayback();
             });
             previewPlayer.setOnErrorListener((mp, what, extra) -> {
                 if (previewPlayingButton != null) {
                     previewPlayingButton.setImageResource(R.drawable.ic_audio_play);
                 }
+                stopPreviewProgressUpdates();
                 stopPreviewPlayback();
                 Toast.makeText(this, "音频播放失败", Toast.LENGTH_SHORT).show();
                 return true;
@@ -4002,7 +4172,41 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         if (previewPlayingButton != null) {
             previewPlayingButton.setImageResource(R.drawable.ic_audio_play);
         }
+        if (previewPlayingSeekBar != null) {
+            previewPlayingSeekBar.setProgress(0);
+        }
+        if (previewPlayingCurrentTime != null) {
+            previewPlayingCurrentTime.setText("00:00");
+        }
         previewPlayingButton = null;
+        previewPlayingSeekBar = null;
+        previewPlayingCurrentTime = null;
+        previewPlayingTotalTime = null;
+        stopPreviewProgressUpdates();
+    }
+
+    private void startPreviewProgressUpdates() {
+        stopPreviewProgressUpdates();
+        previewProgressRunnable = () -> {
+            if (previewPlayer != null && previewPlayer.isPlaying()) {
+                int position = previewPlayer.getCurrentPosition();
+                if (previewPlayingSeekBar != null) {
+                    previewPlayingSeekBar.setProgress(position);
+                }
+                if (previewPlayingCurrentTime != null) {
+                    previewPlayingCurrentTime.setText(formatDuration(position));
+                }
+                previewProgressHandler.postDelayed(previewProgressRunnable, 300);
+            }
+        };
+        previewProgressHandler.post(previewProgressRunnable);
+    }
+
+    private void stopPreviewProgressUpdates() {
+        if (previewProgressRunnable != null) {
+            previewProgressHandler.removeCallbacks(previewProgressRunnable);
+            previewProgressRunnable = null;
+        }
     }
 
     private void exportAudioFile(String path) {
@@ -4175,6 +4379,8 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
      * 切换到指定项目并导入数据
      */
     private void switchProjectAndImport(String projectName) {
+        String currentProject = projectManager != null ? projectManager.getCurrentProject() : null;
+        cacheDraftForProject(currentProject);
         // 显示加载指示器
         ProgressDialog progressDialog = new ProgressDialog(this);
         progressDialog.setMessage("正在创建项目并准备导入...");
@@ -4198,6 +4404,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                 runOnUiThread(() -> {
                     updateTitle();
                     clearForm();
+                    restoreDraftForProject(projectName);
                     
                     // 重新加载新项目的设置
                     loadSettings();
@@ -4231,6 +4438,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                     Toast.makeText(MainActivity.this, 
                             "切换项目失败", 
                             Toast.LENGTH_SHORT).show();
+                    restoreDraftForProject(currentProject);
                 });
             }
         }).start();

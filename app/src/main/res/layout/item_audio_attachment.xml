@@ -17,18 +17,35 @@
 
     <TextView
         android:id="@+id/audioItemName"
-        android:layout_width="0dp"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
         android:layout_marginStart="8dp"
         android:text="录音"
         android:textSize="14sp" />
 
     <TextView
-        android:id="@+id/audioItemDuration"
+        android:id="@+id/audioItemCurrentTime"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="8dp"
+        android:text="00:00"
+        android:textSize="12sp"
+        android:textColor="#757575" />
+
+    <SeekBar
+        android:id="@+id/audioItemSeekBar"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="8dp"
+        android:max="100"
+        android:progress="0" />
+
+    <TextView
+        android:id="@+id/audioItemDuration"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:text="00:00"
         android:textSize="12sp"
         android:textColor="#757575" />
