@@ -174,6 +174,8 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     private boolean isRecording = false;
     private File currentRecordingFile;
     private long recordingStartTime = 0L;
+    private Handler recordingTimerHandler = new Handler(Looper.getMainLooper());
+    private Runnable recordingTimerRunnable;
 
     private MediaPlayer previewPlayer;
     private String previewPlayingPath;
@@ -4205,6 +4207,9 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                 voiceInputButton.setColorFilter(Color.RED);
             }
             Toast.makeText(this, "开始录音", Toast.LENGTH_SHORT).show();
+            
+            // 启动录制时长更新定时器
+            startRecordingTimer();
         } catch (Exception e) {
             android.util.Log.e("NotePlusAudio", "开始录音失败", e);
             Toast.makeText(this, "开始录音失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
@@ -4217,6 +4222,9 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             return;
         }
 
+        // 停止录制时长更新定时器
+        stopRecordingTimer();
+        
         try {
             mediaRecorder.stop();
         } catch (Exception e) {
@@ -5316,5 +5324,45 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         }
         selectedNoteIds.add(noteId);
         showMoveToProjectDialog();
+    }
+    
+    /**
+     * 启动录制时长更新定时器
+     */
+    private void startRecordingTimer() {
+        if (recordingTimerRunnable != null) {
+            recordingTimerHandler.removeCallbacks(recordingTimerRunnable);
+        }
+        
+        recordingTimerRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (isRecording && recordingStartTime > 0) {
+                    long elapsedMs = System.currentTimeMillis() - recordingStartTime;
+                    String durationText = formatDuration(elapsedMs);
+                    
+                    // 更新 audioCountText 显示正在录制时长
+                    if (audioCountText != null) {
+                        audioCountText.setText("正在录制: " + durationText);
+                        audioCountText.setVisibility(View.VISIBLE);
+                    }
+                    
+                    // 每200ms更新一次
+                    recordingTimerHandler.postDelayed(this, 200);
+                }
+            }
+        };
+        
+        recordingTimerHandler.post(recordingTimerRunnable);
+    }
+    
+    /**
+     * 停止录制时长更新定时器
+     */
+    private void stopRecordingTimer() {
+        if (recordingTimerRunnable != null) {
+            recordingTimerHandler.removeCallbacks(recordingTimerRunnable);
+            recordingTimerRunnable = null;
+        }
     }
 }
