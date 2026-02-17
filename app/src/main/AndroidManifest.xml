@@ -41,6 +41,25 @@
 				<category android:name="android.intent.category.LAUNCHER" />
 			</intent-filter>
 		</activity>
+
+		<activity
+			android:name=".widget.NoteWidgetConfigActivity"
+			android:exported="true">
+			<intent-filter>
+				<action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+			</intent-filter>
+		</activity>
+
+		<receiver
+			android:name=".widget.NoteWidgetProvider"
+			android:exported="true">
+			<intent-filter>
+				<action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+			</intent-filter>
+			<meta-data
+				android:name="android.appwidget.provider"
+				android:resource="@xml/note_widget_info" />
+		</receiver>
 		
 		<!-- 注册提醒广播接收器 -->
 		<receiver 

@@ -113,6 +113,8 @@ import person.notfresh.noteplus.core.model.Note;
 import person.notfresh.noteplus.manager.NoteListManager;
 import person.notfresh.noteplus.manager.INoteListCallback;
 import person.notfresh.noteplus.core.model.AudioAttachment;
+import person.notfresh.noteplus.widget.NoteWidgetUpdater;
+import person.notfresh.noteplus.widget.NoteWidgetProvider;
 
 
 public class MainActivity extends AppCompatActivity implements INoteListCallback {
@@ -180,6 +182,9 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     private AudioManager audioManager;
     private AudioManager.OnAudioFocusChangeListener recordingAudioFocusChangeListener;
     private boolean hasRecordingAudioFocus = false;
+
+    private Long pendingWidgetScrollNoteId = null;
+    private String pendingWidgetScrollProject = null;
 
     private MediaPlayer previewPlayer;
     private String previewPlayingPath;
@@ -293,6 +298,9 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             noteListManager.loadNotes();
         }
 
+        // 处理来自Widget的跳转请求
+        handleWidgetIntent(getIntent());
+
         // 设置保存按钮点击监听器
         saveButton.setOnClickListener(v -> saveMoment());
 
@@ -354,6 +362,13 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         if (ReminderScheduler.isReminderEnabled(this)) {
             ReminderScheduler.checkMissedReminder(this);
         }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleWidgetIntent(intent);
     }
 
     @Override
@@ -694,6 +709,9 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                 noteListManager.refreshNotes();
             }
             
+            // 刷新 Widget（如果配置为自动刷新）
+            refreshWidgetsIfNeeded();
+            
             Toast.makeText(this, "保存成功", Toast.LENGTH_SHORT).show();
         } finally {
             // 结束事务
@@ -724,6 +742,58 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         // 清空选中音频
         selectedAudioItems.clear();
         updateSelectedAudioUi();
+    }
+
+    private void handleWidgetIntent(Intent intent) {
+        if (intent == null) {
+            return;
+        }
+        long noteId = intent.getLongExtra(NoteWidgetUpdater.EXTRA_NOTE_ID, -1);
+        String projectName = intent.getStringExtra(NoteWidgetUpdater.EXTRA_PROJECT_NAME);
+        if (noteId <= 0 || projectName == null || projectName.isEmpty()) {
+            return;
+        }
+
+        String currentProject = projectManager != null ? projectManager.getCurrentProject() : null;
+        if (currentProject != null && currentProject.equals(projectName)) {
+            if (noteListManager != null && momentsListView != null) {
+                momentsListView.post(() -> noteListManager.scrollToNote(noteId));
+            }
+        } else {
+            pendingWidgetScrollNoteId = noteId;
+            pendingWidgetScrollProject = projectName;
+            switchProject(projectName);
+        }
+    }
+
+    private void applyPendingWidgetScroll() {
+        if (pendingWidgetScrollNoteId == null) {
+            return;
+        }
+        long noteId = pendingWidgetScrollNoteId;
+        pendingWidgetScrollNoteId = null;
+        pendingWidgetScrollProject = null;
+
+        if (noteListManager != null && momentsListView != null) {
+            momentsListView.post(() -> noteListManager.scrollToNote(noteId));
+        }
+    }
+
+    private void refreshWidgetsIfNeeded() {
+        android.content.SharedPreferences prefs = getSharedPreferences(
+                NoteWidgetUpdater.PREFS_NAME, MODE_PRIVATE);
+        android.appwidget.AppWidgetManager appWidgetManager = 
+                android.appwidget.AppWidgetManager.getInstance(this);
+        android.content.ComponentName provider = new android.content.ComponentName(
+                this, NoteWidgetProvider.class);
+        int[] appWidgetIds = appWidgetManager.getAppWidgetIds(provider);
+        
+        for (int appWidgetId : appWidgetIds) {
+            NoteWidgetUpdater.Config config = NoteWidgetUpdater.loadConfig(this, appWidgetId);
+            if (config.refreshStrategy == NoteWidgetUpdater.REFRESH_AUTO) {
+                NoteWidgetUpdater.updateAppWidget(this, appWidgetManager, appWidgetId);
+            }
+        }
     }
 
     /**
@@ -1551,6 +1621,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                             if (noteListManager != null) {
                 noteListManager.loadNotes();
             } // 使用现有的加载方法
+                            applyPendingWidgetScroll();
                             progressDialog.dismiss();
                             Toast.makeText(MainActivity.this, 
                                     "已切换到项目：" + projectName, 
@@ -1564,6 +1635,8 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                     Toast.makeText(MainActivity.this, 
                             "切换项目失败", 
                             Toast.LENGTH_SHORT).show();
+                    pendingWidgetScrollNoteId = null;
+                    pendingWidgetScrollProject = null;
                     restoreDraftForProject(currentProject);
                 });
             }

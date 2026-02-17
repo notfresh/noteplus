@@ -7,6 +7,36 @@
 	<string name="next">Next</string>
 	<string name="previous">Previous</string>
 	
+	<string-array name="widget_range_options">
+		<item>当前项目</item>
+		<item>所有项目</item>
+		<item>指定项目</item>
+	</string-array>
+	
+	<string-array name="widget_height_options">
+		<item>紧凑</item>
+		<item>标准</item>
+		<item>宽松</item>
+	</string-array>
+	
+	<string-array name="widget_click_action_options">
+		<item>打开应用主页</item>
+		<item>打开笔记详情</item>
+	</string-array>
+	
+	<string-array name="widget_refresh_strategy_options">
+		<item>手动刷新按钮</item>
+		<item>自动刷新</item>
+	</string-array>
+	
+	<string-array name="widget_note_count_options">
+		<item>1条笔记</item>
+		<item>2条笔记</item>
+		<item>3条笔记</item>
+		<item>4条笔记</item>
+		<item>5条笔记</item>
+	</string-array>
+	
 	<string name="lorem_ipsum">
 		Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam in scelerisque sem. Mauris
 		volutpat, dolor id interdum ullamcorper, risus dolor egestas lectus, sit amet mattis purus
