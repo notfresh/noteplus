@@ -2964,7 +2964,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         // 获取UI组件
         TextView detailTitle = dialogView.findViewById(R.id.detailTitle);
         Button btnCloseDetail = dialogView.findViewById(R.id.btnCloseDetail);
-        Button btnCloseDetail2 = dialogView.findViewById(R.id.btnCloseDetail2);
+        Button btnEditDetail = dialogView.findViewById(R.id.btnEditDetail);
         TextView detailProjectName = dialogView.findViewById(R.id.detailProjectName);
         TextView detailNoteContent = dialogView.findViewById(R.id.detailNoteContent);
         TextView detailNoteTime = dialogView.findViewById(R.id.detailNoteTime);
@@ -3094,12 +3094,12 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             }
             dialog.dismiss();
         });
-        btnCloseDetail2.setOnClickListener(v -> {
-            if (tagsCursor != null && !tagsCursor.isClosed()) {
-                tagsCursor.close();
-            }
-            dialog.dismiss();
-        });
+
+        btnEditDetail.setOnClickListener(v -> showTimelineNoteEditDialog(note, noteDbHelper, updatedContent -> {
+            note.setContent(updatedContent);
+            String displayContent = note.isPinned() ? "📌 " + updatedContent : updatedContent;
+            detailNoteContent.setText(displayContent);
+        }));
         
         // 设置追加内容按钮事件，添加评论成功后刷新列表
         btnAddComment.setOnClickListener(v -> {
@@ -3297,6 +3297,81 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                 });
             });
         }
+    }
+
+    /**
+     * 在时间线详情弹窗中编辑笔记内容
+     */
+    private void showTimelineNoteEditDialog(Note note, NoteDbHelper noteDbHelper, java.util.function.Consumer<String> onSaved) {
+        if (note == null || noteDbHelper == null) {
+            return;
+        }
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        View fullscreenView = getLayoutInflater().inflate(R.layout.dialog_fullscreen_edit, null);
+        builder.setView(fullscreenView);
+
+        AlertDialog editDialog = builder.create();
+
+        EditText fullscreenEditText = fullscreenView.findViewById(R.id.fullscreenEditText);
+        ImageButton btnExitFullscreen = fullscreenView.findViewById(R.id.btnExitFullscreen);
+        Button btnSaveFullscreen = fullscreenView.findViewById(R.id.btnSaveFullscreen);
+
+        if (fullscreenEditText == null || btnExitFullscreen == null || btnSaveFullscreen == null) {
+            android.util.Log.e("Timeline", "showTimelineNoteEditDialog: inflate edit views failed");
+            return;
+        }
+
+        String currentContent = note.getContent() != null ? note.getContent() : "";
+        fullscreenEditText.setText(currentContent);
+        fullscreenEditText.setSelection(currentContent.length());
+
+        btnExitFullscreen.setOnClickListener(v -> editDialog.dismiss());
+
+        btnSaveFullscreen.setOnClickListener(v -> {
+            String newContent = fullscreenEditText.getText().toString().trim();
+            if (newContent.isEmpty()) {
+                Toast.makeText(this, "内容不能为空", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            SQLiteDatabase db = noteDbHelper.getWritableDatabase();
+            ContentValues values = new ContentValues();
+            values.put(NoteDbHelper.COLUMN_CONTENT, newContent);
+            int rows = db.update(
+                    NoteDbHelper.TABLE_NOTES,
+                    values,
+                    NoteDbHelper.COLUMN_ID + "=?",
+                    new String[]{String.valueOf(note.getId())}
+            );
+
+            if (rows > 0) {
+                if (onSaved != null) {
+                    onSaved.accept(newContent);
+                }
+                Toast.makeText(this, "已更新", Toast.LENGTH_SHORT).show();
+                editDialog.dismiss();
+            } else {
+                Toast.makeText(this, "更新失败", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        Window window = editDialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawableResource(android.R.color.white);
+            window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        }
+
+        editDialog.show();
+
+        fullscreenEditText.post(() -> {
+            fullscreenEditText.requestFocus();
+            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.showSoftInput(fullscreenEditText, InputMethodManager.SHOW_IMPLICIT);
+            }
+        });
     }
     
     /**

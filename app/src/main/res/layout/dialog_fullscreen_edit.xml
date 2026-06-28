@@ -16,6 +16,18 @@
         android:background="?attr/colorPrimary"
         android:elevation="4dp">
 
+        <Button
+            android:id="@+id/btnInsertTimestamp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🕐"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="@android:color/transparent"
+            android:minWidth="0dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:contentDescription="插入时间戳" />
+
         <View
             android:layout_width="0dp"
             android:layout_height="1dp"
@@ -37,6 +49,17 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="保存"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="@android:color/transparent"
+            android:minWidth="0dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp" />
+
+        <Button
+            android:id="@+id/btnArchive"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="存档"
             android:textColor="#FFFFFF"
             android:backgroundTint="@android:color/transparent"
             android:minWidth="0dp"

@@ -674,8 +674,10 @@ public class NoteListManager {
         EditText fullscreenEditText = fullscreenView.findViewById(R.id.fullscreenEditText);
         ImageButton btnExitFullscreen = fullscreenView.findViewById(R.id.btnExitFullscreen);
         Button btnSaveFullscreen = fullscreenView.findViewById(R.id.btnSaveFullscreen);
+        Button btnInsertTimestamp = fullscreenView.findViewById(R.id.btnInsertTimestamp);
+        Button btnArchive = fullscreenView.findViewById(R.id.btnArchive);
 
-        if (fullscreenEditText == null || btnExitFullscreen == null || btnSaveFullscreen == null) {
+        if (fullscreenEditText == null || btnExitFullscreen == null || btnSaveFullscreen == null || btnInsertTimestamp == null || btnArchive == null) {
             android.util.Log.e("NoteListManager", "Failed to inflate fullscreen edit views");
             return;
         }
@@ -688,6 +690,37 @@ public class NoteListManager {
 
         // 退出按钮：关闭对话框，不保存
         btnExitFullscreen.setOnClickListener(v -> dialog.dismiss());
+
+        // 插入时间戳按钮：在光标位置插入当前时间戳
+        btnInsertTimestamp.setOnClickListener(v -> {
+            SimpleDateFormat sdf = new SimpleDateFormat("[yyyy-MM-dd HH:mm:ss]\n", Locale.CHINA);
+            String timestamp = sdf.format(new Date());
+            int cursorPosition = fullscreenEditText.getSelectionStart();
+            fullscreenEditText.getText().insert(cursorPosition, timestamp);
+        });
+
+        // 存档按钮：保存但不退出
+        btnArchive.setOnClickListener(v -> {
+            String newContent = fullscreenEditText.getText().toString().trim();
+            if (!newContent.isEmpty()) {
+                updateNoteContent(noteId, newContent);
+                Toast.makeText(context, "已存档", Toast.LENGTH_SHORT).show();
+                // 刷新列表 cursor，显示存档后的内容
+                listView.post(() -> {
+                    if (noteCursorWrapper != null) {
+                        NoteDbHelper helper = callback.getDbHelper();
+                        if (helper != null) {
+                            boolean timeDescOrder = callback.getTimeDescOrder();
+                            Cursor newCursor = helper.loadNotes(timeDescOrder);
+                            noteCursorWrapper.setCursor(newCursor);
+                            adapter.notifyDataSetChanged();
+                        }
+                    }
+                });
+            } else {
+                Toast.makeText(context, "内容不能为空", Toast.LENGTH_SHORT).show();
+            }
+        });
 
         // 保存按钮：更新笔记内容并关闭
         btnSaveFullscreen.setOnClickListener(v -> {

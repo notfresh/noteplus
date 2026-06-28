@@ -192,12 +192,11 @@
             android:minWidth="100dp" />
 
         <Button
-            android:id="@+id/btnCloseDetail2"
+            android:id="@+id/btnEditDetail"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="关闭"
+            android:text="编辑"
             android:minWidth="100dp" />
     </LinearLayout>
 
 </LinearLayout>
-

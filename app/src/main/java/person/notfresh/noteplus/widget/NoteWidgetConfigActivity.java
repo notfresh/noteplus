@@ -234,14 +234,21 @@ public class NoteWidgetConfigActivity extends AppCompatActivity {
 
     private void updateSelectedCount() {
         int count = selectedItems.size();
-        int requiredCount = noteCountSpinner.getSelectedItemPosition() + 1;
-        selectedCountText.setText("已选择 " + count + " / " + requiredCount);
+        int maxCount = noteCountSpinner.getSelectedItemPosition() + 1;
+        selectedCountText.setText("已选择 " + count + " (最多" + maxCount + "条)");
     }
 
     private void saveConfig() {
         int noteCount = noteCountSpinner.getSelectedItemPosition() + 1;
-        if (selectedItems.size() != noteCount) {
-            Toast.makeText(this, "请选择 " + noteCount + " 条笔记", Toast.LENGTH_SHORT).show();
+        int selectedCount = selectedItems.size();
+        
+        if (selectedCount == 0) {
+            Toast.makeText(this, "请至少选择 1 条笔记", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        if (selectedCount > noteCount) {
+            Toast.makeText(this, "最多选择 " + noteCount + " 条笔记，当前选了 " + selectedCount + " 条", Toast.LENGTH_SHORT).show();
             return;
         }
 
