@@ -1975,31 +1975,34 @@ public class NoteListManager {
         
         // 检查当前置顶状态
         boolean isPinned = dbHelper.isNotePinned(noteId);
-        String[] options = {"复制到剪切板", "追加内容", isPinned ? "取消置顶" : "置顶", "合并到...", "移动到...", "归档", "删除"};
+        String[] options = {"复制到剪切板", "编辑", "追加内容", isPinned ? "取消置顶" : "置顶", "合并到...", "移动到...", "归档", "删除"};
         
         builder.setItems(options, (dialog, which) -> {
             switch (which) {
                 case 0: // 复制到剪切板
                     copyToClipboard(noteId);
                     break;
-                case 1: // 添加追加（新增）
+                case 1: // 编辑
+                    showEditNoteDialog(noteId);
+                    break;
+                case 2: // 添加追加（新增）
                     showAddCommentDialog(noteId, null);
                     break;
-                case 2: // 置顶/取消置顶
+                case 3: // 置顶/取消置顶
                     togglePinNote(noteId);
                     break;
-                case 3: // 合并到...
+                case 4: // 合并到...
                     showMergeToDialog(noteId);
                     break;
-                case 4: // 移动到...
+                case 5: // 移动到...
                     if (callback != null) {
                         callback.onRequestMoveToProject(noteId);
                     }
                     break;
-                case 5: // 归档
+                case 6: // 归档
                     showArchiveConfirmDialog(noteId);
                     break;
-                case 6: // 删除
+                case 7: // 删除
                     showDeleteConfirmDialog(noteId);
                     break;
             }
