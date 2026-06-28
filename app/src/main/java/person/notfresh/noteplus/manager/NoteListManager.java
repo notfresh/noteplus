@@ -27,6 +27,9 @@ import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.widget.ImageButton;
+import android.view.inputmethod.InputMethodManager;
+import android.view.WindowManager;
+import android.widget.Button;
 import androidx.core.content.FileProvider;
 import androidx.fragment.app.FragmentActivity;
 
@@ -627,7 +630,93 @@ public class NoteListManager {
             Toast.makeText(context, "无法获取笔记内容", Toast.LENGTH_SHORT).show();
         }
     }
-    
+
+    /**
+     * 显示编辑笔记对话框
+     * 复用全屏编辑布局，支持修改笔记内容
+     * @param noteId 笔记ID
+     */
+    public void showEditNoteDialog(long noteId) {
+        if (callback == null) {
+            return;
+        }
+
+        Context context = callback.getContext();
+        NoteDbHelper dbHelper = callback.getDbHelper();
+        if (context == null || dbHelper == null) {
+            return;
+        }
+
+        // 从 adapter 中获取笔记内容
+        String currentContent = null;
+        if (adapter != null) {
+            for (int i = 0; i < adapter.getCount(); i++) {
+                Note note = adapter.getItem(i);
+                if (note != null && note.getId() == noteId) {
+                    currentContent = note.getContent();
+                    break;
+                }
+            }
+        }
+
+        // 如果 adapter 中找不到，从数据库加载
+        if (currentContent == null) {
+            currentContent = getNoteContentById(noteId);
+        }
+
+        // 创建全屏编辑对话框
+        AlertDialog.Builder builder = new AlertDialog.Builder(context);
+        View fullscreenView = LayoutInflater.from(context).inflate(R.layout.dialog_fullscreen_edit, null);
+        builder.setView(fullscreenView);
+
+        AlertDialog dialog = builder.create();
+
+        EditText fullscreenEditText = fullscreenView.findViewById(R.id.fullscreenEditText);
+        ImageButton btnExitFullscreen = fullscreenView.findViewById(R.id.btnExitFullscreen);
+        Button btnSaveFullscreen = fullscreenView.findViewById(R.id.btnSaveFullscreen);
+
+        // 填充当前内容
+        fullscreenEditText.setText(currentContent != null ? currentContent : "");
+        if (currentContent != null && currentContent.length() > 0) {
+            fullscreenEditText.setSelection(currentContent.length());
+        }
+
+        // 退出按钮：关闭对话框，不保存
+        btnExitFullscreen.setOnClickListener(v -> dialog.dismiss());
+
+        // 保存按钮：更新笔记内容并关闭
+        btnSaveFullscreen.setOnClickListener(v -> {
+            String newContent = fullscreenEditText.getText().toString().trim();
+            if (!newContent.isEmpty()) {
+                updateNoteContent(noteId, newContent);
+                refreshNoteView(noteId);
+            } else {
+                Toast.makeText(context, "内容不能为空", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            dialog.dismiss();
+        });
+
+        // 设置窗口属性
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawableResource(android.R.color.white);
+            window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        }
+
+        dialog.show();
+
+        // 显示键盘
+        fullscreenEditText.post(() -> {
+            fullscreenEditText.requestFocus();
+            InputMethodManager imm = (InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.showSoftInput(fullscreenEditText, InputMethodManager.SHOW_IMPLICIT);
+            }
+        });
+    }
+
     /**
      * 根据笔记ID获取笔记内容
      * 从 MainActivity.getNoteContentById() 迁移
@@ -665,7 +754,34 @@ public class NoteListManager {
         
         return content;
     }
-    
+
+    /**
+     * 更新笔记内容
+     * @param noteId 笔记ID
+     * @param newContent 新的笔记内容
+     */
+    private void updateNoteContent(long noteId, String newContent) {
+        if (callback == null) {
+            return;
+        }
+
+        NoteDbHelper dbHelper = callback.getDbHelper();
+        if (dbHelper == null) {
+            return;
+        }
+
+        SQLiteDatabase db = dbHelper.getReadableDatabase();
+        android.content.ContentValues values = new android.content.ContentValues();
+        values.put(NoteDbHelper.COLUMN_CONTENT, newContent);
+
+        db.update(
+            NoteDbHelper.TABLE_NOTES,
+            values,
+            NoteDbHelper.COLUMN_ID + "=?",
+            new String[]{String.valueOf(noteId)}
+        );
+    }
+
     // ========== 辅助方法（从 MainActivity 迁移） ==========
     
     /**
