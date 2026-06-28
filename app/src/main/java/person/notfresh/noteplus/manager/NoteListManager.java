@@ -694,7 +694,8 @@ public class NoteListManager {
             String newContent = fullscreenEditText.getText().toString().trim();
             if (!newContent.isEmpty()) {
                 updateNoteContent(noteId, newContent);
-                refreshNoteView(noteId);
+                // 直接更新列表项的内容文本
+                updateNoteContentView(noteId, newContent);
             } else {
                 Toast.makeText(context, "内容不能为空", Toast.LENGTH_SHORT).show();
                 return;
@@ -785,6 +786,32 @@ public class NoteListManager {
             NoteDbHelper.COLUMN_ID + "=?",
             new String[]{String.valueOf(noteId)}
         );
+    }
+
+    /**
+     * 更新列表项的内容文本视图
+     * @param noteId 笔记ID
+     * @param newContent 新的内容
+     */
+    private void updateNoteContentView(long noteId, String newContent) {
+        if (adapter == null || listView == null) {
+            return;
+        }
+
+        // 找到该笔记在列表中的位置
+        for (int i = 0; i < listView.getChildCount(); i++) {
+            View childView = listView.getChildAt(i);
+            if (childView != null) {
+                Object tag = childView.getTag();
+                if (tag != null && tag.equals(noteId)) {
+                    TextView contentText = childView.findViewById(R.id.contentText);
+                    if (contentText != null) {
+                        contentText.setText(newContent);
+                    }
+                    break;
+                }
+            }
+        }
     }
 
     // ========== 辅助方法（从 MainActivity 迁移） ==========
