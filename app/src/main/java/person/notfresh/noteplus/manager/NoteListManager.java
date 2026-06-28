@@ -694,13 +694,24 @@ public class NoteListManager {
             String newContent = fullscreenEditText.getText().toString().trim();
             if (!newContent.isEmpty()) {
                 updateNoteContent(noteId, newContent);
-                // 直接更新列表项的内容文本
-                updateNoteContentView(noteId, newContent);
             } else {
                 Toast.makeText(context, "内容不能为空", Toast.LENGTH_SHORT).show();
                 return;
             }
             dialog.dismiss();
+            // dialog关闭后，使用新Cursor刷新adapter
+            listView.post(() -> {
+                android.util.Log.d("NoteListManager", "post: refreshing note " + noteId);
+                if (noteCursorWrapper != null) {
+                    NoteDbHelper helper = callback.getDbHelper();
+                    if (helper != null) {
+                        boolean timeDescOrder = callback.getTimeDescOrder();
+                        Cursor newCursor = helper.loadNotes(timeDescOrder);
+                        noteCursorWrapper.setCursor(newCursor);
+                        adapter.notifyDataSetChanged();
+                    }
+                }
+            });
         });
 
         // 设置窗口属性
@@ -795,6 +806,7 @@ public class NoteListManager {
      */
     private void updateNoteContentView(long noteId, String newContent) {
         if (adapter == null || listView == null) {
+            android.util.Log.e("NoteListManager", "updateNoteContentView: adapter or listView is null");
             return;
         }
 
@@ -808,6 +820,8 @@ public class NoteListManager {
             }
         }
 
+        android.util.Log.d("NoteListManager", "updateNoteContentView: noteId=" + noteId + ", targetPosition=" + targetPosition);
+
         if (targetPosition < 0) {
             return;
         }
@@ -815,14 +829,20 @@ public class NoteListManager {
         // 检查该位置是否在可见区域内
         int firstVisible = listView.getFirstVisiblePosition();
         int lastVisible = listView.getLastVisiblePosition();
+        android.util.Log.d("NoteListManager", "updateNoteContentView: firstVisible=" + firstVisible + ", lastVisible=" + lastVisible);
 
         if (targetPosition >= firstVisible && targetPosition <= lastVisible) {
             int viewIndex = targetPosition - firstVisible;
             View view = listView.getChildAt(viewIndex);
+            android.util.Log.d("NoteListManager", "updateNoteContentView: viewIndex=" + viewIndex + ", view=" + view);
             if (view != null) {
                 TextView contentText = view.findViewById(R.id.contentText);
+                android.util.Log.d("NoteListManager", "updateNoteContentView: contentText=" + contentText);
                 if (contentText != null) {
+                    android.util.Log.d("NoteListManager", "updateNoteContentView: setting text from '" + contentText.getText() + "' to '" + newContent + "'");
                     contentText.setText(newContent);
+                    view.invalidate();
+                    view.postInvalidate();
                 }
             }
         }
