@@ -798,17 +798,31 @@ public class NoteListManager {
             return;
         }
 
-        // 找到该笔记在列表中的位置
-        for (int i = 0; i < listView.getChildCount(); i++) {
-            View childView = listView.getChildAt(i);
-            if (childView != null) {
-                Object tag = childView.getTag();
-                if (tag != null && tag.equals(noteId)) {
-                    TextView contentText = childView.findViewById(R.id.contentText);
-                    if (contentText != null) {
-                        contentText.setText(newContent);
-                    }
-                    break;
+        // 先通过 adapter 找到笔记在列表中的位置
+        int targetPosition = -1;
+        for (int i = 0; i < adapter.getCount(); i++) {
+            Note note = adapter.getItem(i);
+            if (note != null && note.getId() == noteId) {
+                targetPosition = i;
+                break;
+            }
+        }
+
+        if (targetPosition < 0) {
+            return;
+        }
+
+        // 检查该位置是否在可见区域内
+        int firstVisible = listView.getFirstVisiblePosition();
+        int lastVisible = listView.getLastVisiblePosition();
+
+        if (targetPosition >= firstVisible && targetPosition <= lastVisible) {
+            int viewIndex = targetPosition - firstVisible;
+            View view = listView.getChildAt(viewIndex);
+            if (view != null) {
+                TextView contentText = view.findViewById(R.id.contentText);
+                if (contentText != null) {
+                    contentText.setText(newContent);
                 }
             }
         }
