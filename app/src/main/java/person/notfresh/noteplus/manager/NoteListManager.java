@@ -675,6 +675,11 @@ public class NoteListManager {
         ImageButton btnExitFullscreen = fullscreenView.findViewById(R.id.btnExitFullscreen);
         Button btnSaveFullscreen = fullscreenView.findViewById(R.id.btnSaveFullscreen);
 
+        if (fullscreenEditText == null || btnExitFullscreen == null || btnSaveFullscreen == null) {
+            android.util.Log.e("NoteListManager", "Failed to inflate fullscreen edit views");
+            return;
+        }
+
         // 填充当前内容
         fullscreenEditText.setText(currentContent != null ? currentContent : "");
         if (currentContent != null && currentContent.length() > 0) {
@@ -770,7 +775,7 @@ public class NoteListManager {
             return;
         }
 
-        SQLiteDatabase db = dbHelper.getReadableDatabase();
+        SQLiteDatabase db = dbHelper.getWritableDatabase();
         android.content.ContentValues values = new android.content.ContentValues();
         values.put(NoteDbHelper.COLUMN_CONTENT, newContent);
 
