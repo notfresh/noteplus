@@ -44,6 +44,14 @@ dependencies {
     implementation(libs.navigation.ui)
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.work:work-runtime:2.8.1")
+
+    // Lucene 核心
+    implementation("org.apache.lucene:lucene-core:9.10.0")
+    implementation("org.apache.lucene:lucene-analysis-common:9.10.0")
+
+    // IK Analyzer Android 版 (来自 jitpack)
+    implementation("com.github.magese:ik-analyzer-android:1.0.5")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.ext.junit)
     androidTestImplementation(libs.espresso.core)
