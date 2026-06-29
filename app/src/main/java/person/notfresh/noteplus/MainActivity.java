@@ -717,7 +717,12 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             
             // 设置事务成功
             db.setTransactionSuccessful();
-            
+
+            // 笔记保存成功后，更新索引
+            if (noteId > 0) {
+                searchManager.indexNote(noteId, content, System.currentTimeMillis());
+            }
+
             // 清空表单
             clearForm();
 
