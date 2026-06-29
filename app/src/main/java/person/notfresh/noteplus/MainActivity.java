@@ -5731,13 +5731,33 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                     
                     runOnUiThread(() -> {
                         progressDialog.dismiss();
-                        
+
                         String message = String.format("移动完成！成功移动 %d 条记录到项目 \"%s\"", finalMovedCount, targetProject);
                         if (finalFailedCount > 0) {
                             message += String.format("，失败 %d 条记录", finalFailedCount);
                         }
                         Toast.makeText(this, message, Toast.LENGTH_LONG).show();
-                        
+
+                        // 更新搜索索引（删除旧索引，用新项目名重建）
+                        if (searchManager != null && finalMovedCount > 0) {
+                            for (Long noteId : selectedNoteIds) {
+                                // 获取笔记内容并重新索引
+                                Cursor noteCursor = targetDbHelper.getWritableDatabase().query(
+                                        NoteDbHelper.TABLE_NOTES,
+                                        new String[]{NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP},
+                                        NoteDbHelper.COLUMN_ID + "=?",
+                                        new String[]{String.valueOf(noteId)},
+                                        null, null, null
+                                );
+                                if (noteCursor != null && noteCursor.moveToFirst()) {
+                                    String content = noteCursor.getString(noteCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_CONTENT));
+                                    long timestamp = noteCursor.getLong(noteCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TIMESTAMP));
+                                    searchManager.indexNote(noteId, content, timestamp, targetProject);
+                                    noteCursor.close();
+                                }
+                            }
+                        }
+
                         // 退出多选模式并隐藏已移动项（不重新查询）
                         Set<Long> movedIds = new HashSet<>(selectedNoteIds);
                         exitMultiSelectMode();
