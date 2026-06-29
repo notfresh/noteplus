@@ -16,6 +16,7 @@ import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.LockFactory;
 import org.apache.lucene.store.SimpleFSLockFactory;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 
@@ -24,8 +25,12 @@ import person.notfresh.noteplus.db.NoteDbHelper;
 /**
  * 笔记索引构建器
  * 负责构建和更新 Lucene 索引
+ *
+ * <p><b>线程安全注意事项：</b>IndexWriter 不是线程安全的。
+ * 多个线程共享同一个 NoteIndexer 实例调用索引操作可能导致数据损坏或异常。
+ * 每个线程应使用独立的 NoteIndexer 实例，或在外部进行同步控制。
  */
-public class NoteIndexer {
+public class NoteIndexer implements Closeable {
     private static final String TAG = "NoteIndexer";
     private static final String INDEX_DIR = "search_index";
     private static final String FIELD_ID = "id";
@@ -162,8 +167,9 @@ public class NoteIndexer {
     }
 
     /**
-     * 关闭索引写入器
+     * 关闭索引写入器并释放资源
      */
+    @Override
     public void close() {
         try {
             if (indexWriter != null) {
@@ -171,6 +177,9 @@ public class NoteIndexer {
             }
             if (analyzer != null) {
                 analyzer.close();
+            }
+            if (indexDirectory != null) {
+                indexDirectory.close();
             }
         } catch (IOException e) {
             Log.e(TAG, "关闭索引写入器失败", e);
