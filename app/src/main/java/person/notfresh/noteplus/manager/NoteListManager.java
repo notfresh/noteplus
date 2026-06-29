@@ -53,6 +53,7 @@ import person.notfresh.noteplus.manager.INoteListCallback;
 import person.notfresh.noteplus.util.DisplayUtil;
 import person.notfresh.noteplus.util.StringUtil;
 import person.notfresh.noteplus.core.model.AudioAttachment;
+import person.notfresh.noteplus.search.SearchManager;
 
 /**
  * 笔记列表管理器
@@ -446,6 +447,9 @@ public class NoteListManager {
         int rowsDeleted = dbHelper.deleteNote(noteId);
         
         if (rowsDeleted > 0) {
+            // 笔记删除后，从索引中移除
+            SearchManager.getInstance(context).deleteNoteIndex(noteId);
+
             Toast.makeText(context, "记录已删除", Toast.LENGTH_SHORT).show();
             
             // 保存当前滚动位置
