@@ -115,6 +115,10 @@ import person.notfresh.noteplus.manager.INoteListCallback;
 import person.notfresh.noteplus.core.model.AudioAttachment;
 import person.notfresh.noteplus.widget.NoteWidgetUpdater;
 import person.notfresh.noteplus.widget.NoteWidgetProvider;
+import person.notfresh.noteplus.search.SearchManager;
+import person.notfresh.noteplus.search.SearchResult;
+import person.notfresh.noteplus.search.SearchResultAdapter;
+import person.notfresh.noteplus.util.SearchIndexInitWorker;
 
 
 public class MainActivity extends AppCompatActivity implements INoteListCallback {
@@ -228,6 +232,16 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     private Uri pendingImportUri = null;
     private String pendingImportFormat = null;
 
+    // 搜索相关
+    private boolean isSearchMode = false;
+    private EditText searchEditText;
+    private ListView searchResultListView;
+    private SearchResultAdapter searchResultAdapter;
+    private ArrayList<SearchResult> searchResults = new ArrayList<>();
+    private SearchManager searchManager;
+    private Handler searchHandler = new Handler();
+    private Runnable searchRunnable;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -297,6 +311,11 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         if (noteListManager != null) {
             noteListManager.loadNotes();
         }
+
+        // 初始化搜索管理器
+        searchManager = SearchManager.getInstance(this);
+        // 检查并构建未索引笔记
+        SearchIndexInitWorker.schedule(this);
 
         // 处理来自Widget的跳转请求
         handleWidgetIntent(getIntent());
@@ -965,10 +984,62 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         new Handler(Looper.getMainLooper()).post(() -> {
             setupProjectSwitchLongPress();
         });
-        
+
+        // 获取搜索菜单项
+        MenuItem searchItem = menu.findItem(R.id.action_search);
+        if (searchItem != null) {
+            searchItem.setOnMenuItemClickListener(item -> {
+                enterSearchMode();
+                return true;
+            });
+        }
+
         return true;
     }
-    
+
+    private void enterSearchMode() {
+        isSearchMode = true;
+        // TODO: 根据你的布局实现搜索模式 UI 切换
+        // 可能需要隐藏原有内容，显示搜索框
+        Toast.makeText(this, "进入搜索模式", Toast.LENGTH_SHORT).show();
+    }
+
+    private void exitSearchMode() {
+        isSearchMode = false;
+        if (searchEditText != null) {
+            searchEditText.setText("");
+        }
+        searchResults.clear();
+        if (searchResultAdapter != null) {
+            searchResultAdapter.notifyDataSetChanged();
+        }
+        // TODO: 恢复原有内容
+    }
+
+    private void performSearch(String query) {
+        if (searchManager == null || query.trim().isEmpty()) {
+            return;
+        }
+
+        // 防抖处理
+        if (searchRunnable != null) {
+            searchHandler.removeCallbacks(searchRunnable);
+        }
+        searchRunnable = () -> {
+            searchManager.search(query, results -> {
+                searchResults.clear();
+                searchResults.addAll(results);
+                if (searchResultAdapter != null) {
+                    searchResultAdapter.notifyDataSetChanged();
+                }
+                if (results.isEmpty()) {
+                    Toast.makeText(MainActivity.this, "未找到相关笔记", Toast.LENGTH_SHORT).show();
+                }
+            });
+        };
+        searchHandler.postDelayed(searchRunnable, 300);
+    }
+
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         int id = item.getItemId();

@@ -2,6 +2,13 @@
 	xmlns:app="http://schemas.android.com/apk/res-auto"
 	xmlns:tools="http://schemas.android.com/tools"
 	tools:context="person.notfresh.noteplus.MainActivity">
+
+	<item
+		android:id="@+id/action_search"
+		android:icon="@android:drawable/ic_menu_search"
+		android:title="搜索"
+		app:showAsAction="ifRoom" />
+
 	<item
 		android:id="@+id/action_settings"
 		android:orderInCategory="100"
