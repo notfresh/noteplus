@@ -14,6 +14,18 @@ import person.notfresh.noteplus.core.model.AudioAttachment;
 public class NoteDbHelper extends SQLiteOpenHelper {
     private static final String DATABASE_NAME = "notes.db";
     private static final int DATABASE_VERSION = 11;
+    private static volatile NoteDbHelper instance;
+
+    public static NoteDbHelper getInstance(Context context) {
+        if (instance == null) {
+            synchronized (NoteDbHelper.class) {
+                if (instance == null) {
+                    instance = new NoteDbHelper(context.getApplicationContext());
+                }
+            }
+        }
+        return instance;
+    }
 
     public static final String TABLE_NOTES = "notes";
     public static final String COLUMN_ID = "_id";
