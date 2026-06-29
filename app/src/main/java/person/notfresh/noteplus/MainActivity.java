@@ -718,11 +718,6 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             // 设置事务成功
             db.setTransactionSuccessful();
 
-            // 笔记保存成功后，更新索引
-            if (noteId > 0) {
-                searchManager.indexNote(noteId, content, System.currentTimeMillis());
-            }
-
             // 清空表单
             clearForm();
 
@@ -744,6 +739,11 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         } finally {
             // 结束事务
             db.endTransaction();
+
+            // 事务提交后更新索引
+            if (noteId > 0 && searchManager != null) {
+                searchManager.indexNote(noteId, content, System.currentTimeMillis());
+            }
         }
     }
     
