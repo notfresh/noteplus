@@ -44,6 +44,7 @@ public class SearchService {
     private final NoteDbHelper dbHelper;
     private Analyzer searchAnalyzer;  // 搜索时用智能分词
     private Directory indexDirectory;
+    private boolean indexInitialized = false;
 
     public SearchService(Context context, NoteDbHelper dbHelper) {
         this.context = context.getApplicationContext();
@@ -60,8 +61,10 @@ public class SearchService {
             LockFactory lockFactory = SimpleFSLockFactory.getDefault();
             indexDirectory = new org.apache.lucene.store.FSDirectory.open(indexDir.toPath(), lockFactory);
             searchAnalyzer = new IKAnalyzer(false);  // false = 智能分词模式
+            indexInitialized = true;
         } catch (IOException e) {
             Log.e(TAG, "搜索服务初始化失败", e);
+            indexInitialized = false;
         }
     }
 
@@ -105,6 +108,13 @@ public class SearchService {
             return results;
         }
 
+        if (!indexInitialized) {
+            Log.e(TAG, "索引未初始化");
+            return results;
+        }
+
+        IndexReader reader = null;
+        Cursor noteCursor = null;
         try {
             // 1. 分词
             List<String> tokens = tokenize(query);
@@ -126,7 +136,7 @@ public class SearchService {
             BooleanQuery booleanQuery = boolQueryBuilder.build();
 
             // 3. 执行搜索
-            IndexReader reader = DirectoryReader.open(indexDirectory);
+            reader = DirectoryReader.open(indexDirectory);
             IndexSearcher searcher = new IndexSearcher(reader);
             TopDocs topDocs = searcher.search(booleanQuery, MAX_SEARCH_RESULTS);
 
@@ -140,7 +150,7 @@ public class SearchService {
                 long timestamp = doc.getField(FIELD_TIMESTAMP).numericValue().longValue();
 
                 // 获取对应的 Note 对象
-                Cursor noteCursor = dbHelper.getWritableDatabase().query(
+                noteCursor = dbHelper.getWritableDatabase().query(
                         NoteDbHelper.TABLE_NOTES,
                         new String[]{NoteDbHelper.COLUMN_ID, NoteDbHelper.COLUMN_CONTENT,
                                 NoteDbHelper.COLUMN_TIMESTAMP, NoteDbHelper.COLUMN_COST,
@@ -159,7 +169,12 @@ public class SearchService {
                             noteCursor.getDouble(noteCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COST)),
                             noteCursor.getInt(noteCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_IS_PINNED)) == 1
                     );
+                }
+
+                // 无论如何都要关闭 cursor
+                if (noteCursor != null) {
                     noteCursor.close();
+                    noteCursor = null;
                 }
 
                 if (note != null) {
@@ -168,10 +183,20 @@ public class SearchService {
                     results.add(new SearchResult(note, highlighted, scoreDoc.score));
                 }
             }
-            reader.close();
 
         } catch (IOException | ParseException e) {
             Log.e(TAG, "搜索失败", e);
+        } finally {
+            if (reader != null) {
+                try {
+                    reader.close();
+                } catch (IOException e) {
+                    Log.e(TAG, "关闭 reader 失败", e);
+                }
+            }
+            if (noteCursor != null) {
+                noteCursor.close();
+            }
         }
 
         return results;
@@ -187,21 +212,38 @@ public class SearchService {
         if (content == null || tokens.isEmpty()) {
             return content;
         }
-        String result = content;
-        for (String token : tokens) {
-            // 简单替换，实际可使用 Lucene 的 Highlighter 类
-            result = result.replace(token, "【" + token + "】");
-        }
-        // 限制显示长度
-        if (result.length() > 200) {
-            int highlightIndex = result.indexOf("【");
-            if (highlightIndex > 100) {
-                result = "..." + result.substring(highlightIndex - 50);
-            } else {
-                result = result.substring(0, 200) + "...";
+        // 预处理：收集所有需要高亮的区间（去重）
+        java.util.Set<String> tokenSet = new java.util.HashSet<>(tokens);
+        List<int[]> highlights = new java.util.ArrayList<>();
+        for (String token : tokenSet) {
+            int index = 0;
+            while ((index = content.indexOf(token, index)) != -1) {
+                highlights.add(new int[]{index, index + token.length()});
+                index += token.length();
             }
         }
-        return result;
+        // 按起始位置排序
+        highlights.sort((a, b) -> Integer.compare(a[0], b[0]));
+        // 构建结果
+        StringBuilder result = new StringBuilder();
+        int lastEnd = 0;
+        for (int[] range : highlights) {
+            result.append(content, lastEnd, range[0]);
+            result.append("【").append(content, range[0], range[1]).append("】");
+            lastEnd = range[1];
+        }
+        result.append(content.substring(lastEnd));
+        // 限制显示长度
+        String finalResult = result.toString();
+        if (finalResult.length() > 200) {
+            int highlightIndex = finalResult.indexOf("【");
+            if (highlightIndex > 100) {
+                finalResult = "..." + finalResult.substring(highlightIndex - 50);
+            } else {
+                finalResult = finalResult.substring(0, 200) + "...";
+            }
+        }
+        return finalResult;
     }
 
     /**
