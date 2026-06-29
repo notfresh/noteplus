@@ -13,7 +13,7 @@ import person.notfresh.noteplus.core.model.AudioAttachment;
 
 public class NoteDbHelper extends SQLiteOpenHelper {
     private static final String DATABASE_NAME = "notes.db";
-    private static final int DATABASE_VERSION = 10;
+    private static final int DATABASE_VERSION = 11;
 
     public static final String TABLE_NOTES = "notes";
     public static final String COLUMN_ID = "_id";
@@ -31,6 +31,7 @@ public class NoteDbHelper extends SQLiteOpenHelper {
     public static final String TABLE_NOTE_COMMENTS = "note_comments";
     public static final String TABLE_NOTE_IMAGES = "note_images";
     public static final String TABLE_NOTE_AUDIO = "note_audio";
+    public static final String TABLE_SEARCH_INDEX_STATUS = "search_index_status";
 
     public static final String COLUMN_TAG_ID = "tag_id";
     public static final String COLUMN_TAG_NAME = "tag_name";
@@ -61,6 +62,9 @@ public class NoteDbHelper extends SQLiteOpenHelper {
     public static final String COLUMN_AUDIO_NOTE_ID = "note_id";
     public static final String COLUMN_AUDIO_PATH = "path";
     public static final String COLUMN_AUDIO_DURATION = "duration_ms";
+
+    public static final String COLUMN_INDEX_NOTE_ID = "note_id";
+    public static final String COLUMN_INDEXED_AT = "indexed_at";
 
     public static final String KEY_TIME_RANGE_REQUIRED = "time_range_required";
     public static final String KEY_TIME_RANGE_DISPLAY = "time_range_display";
@@ -143,7 +147,13 @@ public class NoteDbHelper extends SQLiteOpenHelper {
                 + COLUMN_AUDIO_DURATION + " INTEGER DEFAULT 0,"
                 + "FOREIGN KEY (" + COLUMN_AUDIO_NOTE_ID + ") REFERENCES " + TABLE_NOTES + "(" + COLUMN_ID + ") ON DELETE CASCADE"
                 + ")";
-        
+
+        String CREATE_SEARCH_INDEX_STATUS_TABLE = "CREATE TABLE " + TABLE_SEARCH_INDEX_STATUS + "("
+                + COLUMN_INDEX_NOTE_ID + " INTEGER PRIMARY KEY,"
+                + COLUMN_INDEXED_AT + " INTEGER NOT NULL,"
+                + "FOREIGN KEY (" + COLUMN_INDEX_NOTE_ID + ") REFERENCES " + TABLE_NOTES + "(" + COLUMN_ID + ") ON DELETE CASCADE"
+                + ")";
+
         database.execSQL(CREATE_TAGS_TABLE);
         database.execSQL(CREATE_TIME_RANGES_TABLE);
         database.execSQL(CREATE_NOTE_TAGS_TABLE);
@@ -151,6 +161,7 @@ public class NoteDbHelper extends SQLiteOpenHelper {
         database.execSQL(CREATE_NOTE_COMMENTS_TABLE);
         database.execSQL(CREATE_NOTE_IMAGES_TABLE);
         database.execSQL(CREATE_NOTE_AUDIO_TABLE);
+        database.execSQL(CREATE_SEARCH_INDEX_STATUS_TABLE);
         
         // 创建索引
         database.execSQL("CREATE INDEX IF NOT EXISTS idx_note_comments_note_id ON " 
@@ -306,6 +317,15 @@ public class NoteDbHelper extends SQLiteOpenHelper {
                     + "FOREIGN KEY (" + COLUMN_AUDIO_NOTE_ID + ") REFERENCES " + TABLE_NOTES + "(" + COLUMN_ID + ") ON DELETE CASCADE"
                     + ")";
             db.execSQL(CREATE_NOTE_AUDIO_TABLE);
+        }
+
+        if (oldVersion < 11) {
+            String CREATE_SEARCH_INDEX_STATUS_TABLE = "CREATE TABLE IF NOT EXISTS " + TABLE_SEARCH_INDEX_STATUS + "("
+                    + COLUMN_INDEX_NOTE_ID + " INTEGER PRIMARY KEY,"
+                    + COLUMN_INDEXED_AT + " INTEGER NOT NULL,"
+                    + "FOREIGN KEY (" + COLUMN_INDEX_NOTE_ID + ") REFERENCES " + TABLE_NOTES + "(" + COLUMN_ID + ") ON DELETE CASCADE"
+                    + ")";
+            db.execSQL(CREATE_SEARCH_INDEX_STATUS_TABLE);
         }
     }
 
@@ -1224,5 +1244,57 @@ public class NoteDbHelper extends SQLiteOpenHelper {
             // 结束事务
             db.endTransaction();
         }
+    }
+
+    /**
+     * 标记笔记已索引
+     * @param noteId 笔记ID
+     * @return 是否成功
+     */
+    public boolean markNoteIndexed(long noteId) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put(COLUMN_INDEX_NOTE_ID, noteId);
+        values.put(COLUMN_INDEXED_AT, System.currentTimeMillis());
+        return db.insertWithOnConflict(TABLE_SEARCH_INDEX_STATUS, null, values, SQLiteDatabase.CONFLICT_REPLACE) != -1;
+    }
+
+    /**
+     * 移除笔记索引标记（删除时调用）
+     * @param noteId 笔记ID
+     * @return 删除的行数
+     */
+    public int unmarkNoteIndexed(long noteId) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        return db.delete(TABLE_SEARCH_INDEX_STATUS, COLUMN_INDEX_NOTE_ID + "=?", new String[]{String.valueOf(noteId)});
+    }
+
+    /**
+     * 获取所有未索引的笔记ID列表
+     * @return Cursor，包含未索引笔记的 _id
+     */
+    public Cursor getUnindexedNotes() {
+        SQLiteDatabase db = this.getReadableDatabase();
+        String query = "SELECT n." + COLUMN_ID + " FROM " + TABLE_NOTES + " n "
+                + "LEFT JOIN " + TABLE_SEARCH_INDEX_STATUS + " s ON n." + COLUMN_ID + " = s." + COLUMN_INDEX_NOTE_ID
+                + " WHERE s." + COLUMN_INDEX_NOTE_ID + " IS NULL AND n." + COLUMN_IS_ARCHIVED + " = 0";
+        return db.rawQuery(query, null);
+    }
+
+    /**
+     * 检查笔记是否已索引
+     * @param noteId 笔记ID
+     * @return true 表示已索引
+     */
+    public boolean isNoteIndexed(long noteId) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        Cursor cursor = db.query(TABLE_SEARCH_INDEX_STATUS,
+                new String[]{COLUMN_INDEX_NOTE_ID},
+                COLUMN_INDEX_NOTE_ID + "=?",
+                new String[]{String.valueOf(noteId)},
+                null, null, null);
+        boolean indexed = cursor != null && cursor.getCount() > 0;
+        if (cursor != null) cursor.close();
+        return indexed;
     }
 } 
