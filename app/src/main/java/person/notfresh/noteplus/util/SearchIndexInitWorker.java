@@ -31,17 +31,17 @@ public class SearchIndexInitWorker extends Worker {
     @Override
     public Result doWork() {
         Log.i(TAG, "开始后台索引构建任务");
+        NoteIndexer indexer = null;
+        android.database.Cursor cursor = null;
         try {
-            NoteIndexer indexer = new NoteIndexer(getApplicationContext(), NoteDbHelper.getInstance(getApplicationContext()));
-
-            // 获取未索引笔记数量
-            android.database.Cursor cursor = NoteDbHelper.getInstance(getApplicationContext()).getUnindexedNotes();
+            indexer = new NoteIndexer(getApplicationContext(), NoteDbHelper.getInstance(getApplicationContext()));
+            cursor = NoteDbHelper.getInstance(getApplicationContext()).getUnindexedNotes();
             int total = cursor.getCount();
             cursor.close();
+            cursor = null;
 
             if (total == 0) {
                 Log.i(TAG, "没有需要索引的笔记");
-                indexer.close();
                 return Result.success();
             }
 
@@ -52,13 +52,19 @@ public class SearchIndexInitWorker extends Worker {
                 Log.d(TAG, "索引进度: " + current + "/" + t);
             });
 
-            indexer.close();
             Log.i(TAG, "后台索引构建任务完成");
             return Result.success();
 
         } catch (Exception e) {
             Log.e(TAG, "后台索引构建任务失败", e);
             return Result.retry();
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+            if (indexer != null) {
+                indexer.close();
+            }
         }
     }
 
