@@ -10,16 +10,13 @@ import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.Term;
-import org.apache.lucene.queryparser.classic.ParseException;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.Directory;
-import org.apache.lucene.store.LockFactory;
-import org.apache.lucene.store.SimpleFSLockFactory;
-import org.wltea.analyzer.lucene.IKAnalyzer;
+import org.apache.lucene.analysis.standard.StandardAnalyzer;
 
 import java.io.File;
 import java.io.IOException;
@@ -58,9 +55,8 @@ public class SearchService {
             if (!indexDir.exists()) {
                 indexDir.mkdirs();
             }
-            LockFactory lockFactory = SimpleFSLockFactory.getDefault();
-            indexDirectory = new org.apache.lucene.store.FSDirectory.open(indexDir.toPath(), lockFactory);
-            searchAnalyzer = new IKAnalyzer(false);  // false = 智能分词模式
+            indexDirectory = new org.apache.lucene.store.NIOFSDirectory(indexDir.toPath());
+            searchAnalyzer = new StandardAnalyzer();
             indexInitialized = true;
         } catch (IOException e) {
             Log.e(TAG, "搜索服务初始化失败", e);
@@ -184,7 +180,7 @@ public class SearchService {
                 }
             }
 
-        } catch (IOException | ParseException e) {
+        } catch (IOException e) {
             Log.e(TAG, "搜索失败", e);
         } finally {
             if (reader != null) {

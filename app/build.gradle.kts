@@ -48,9 +48,7 @@ dependencies {
     // Lucene 核心
     implementation("org.apache.lucene:lucene-core:9.10.0")
     implementation("org.apache.lucene:lucene-analysis-common:9.10.0")
-
-    // IK Analyzer Android 版 (来自 jitpack)
-    implementation("com.github.magese:ik-analyzer-android:1.0.5")
+    implementation("org.apache.lucene:lucene-queryparser:9.10.0")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.ext.junit)

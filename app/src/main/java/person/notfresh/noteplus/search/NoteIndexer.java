@@ -12,8 +12,8 @@ import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
+import org.apache.lucene.index.Term;
 import org.apache.lucene.store.Directory;
-import org.apache.lucene.store.LockFactory;
 import org.apache.lucene.store.SimpleFSLockFactory;
 
 import java.io.Closeable;
@@ -55,9 +55,8 @@ public class NoteIndexer implements Closeable {
             if (!indexDir.exists()) {
                 indexDir.mkdirs();
             }
-            LockFactory lockFactory = SimpleFSLockFactory.getDefault();
-            indexDirectory = new org.apache.lucene.store.FSDirectory.open(indexDir.toPath(), lockFactory);
-            analyzer = new org.wltea.analyzer.lucene.IKAnalyzer(true);  // true = 细粒度分词
+            indexDirectory = new org.apache.lucene.store.NIOFSDirectory(indexDir.toPath());
+            analyzer = new org.apache.lucene.analysis.standard.StandardAnalyzer();
             IndexWriterConfig config = new IndexWriterConfig(analyzer);
             indexWriter = new IndexWriter(indexDirectory, config);
             Log.i(TAG, "索引初始化成功，索引目录: " + indexDir.getAbsolutePath());
@@ -80,7 +79,7 @@ public class NoteIndexer implements Closeable {
         }
         try {
             // 先删除旧文档（如果存在）
-            indexWriter.deleteDocuments(new LongPoint(FIELD_ID, noteId));
+            indexWriter.deleteDocuments(new Term(FIELD_ID, String.valueOf(noteId)));
 
             // 创建新文档
             Document doc = new Document();
@@ -114,7 +113,7 @@ public class NoteIndexer implements Closeable {
             return false;
         }
         try {
-            indexWriter.deleteDocuments(new LongPoint(FIELD_ID, noteId));
+            indexWriter.deleteDocuments(new Term(FIELD_ID, String.valueOf(noteId)));
             indexWriter.commit();
             dbHelper.unmarkNoteIndexed(noteId);
             Log.d(TAG, "笔记 " + noteId + " 从索引中删除");

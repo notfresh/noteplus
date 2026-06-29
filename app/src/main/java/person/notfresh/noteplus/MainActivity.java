@@ -679,7 +679,8 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         }
         
         SQLiteDatabase db = dbHelper.getWritableDatabase();
-        
+        long noteId = -1;
+
         // 开始事务
         db.beginTransaction();
         try {
@@ -688,8 +689,8 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             values.put(NoteDbHelper.COLUMN_CONTENT, content);
             values.put(NoteDbHelper.COLUMN_TIMESTAMP, System.currentTimeMillis());
             values.put(NoteDbHelper.COLUMN_COST, cost); // 保存花费金额
-            
-            long noteId = db.insert(NoteDbHelper.TABLE_NOTES, null, values);
+
+            noteId = db.insert(NoteDbHelper.TABLE_NOTES, null, values);
 
             if (noteId > 0 && selectedImagePaths != null && !selectedImagePaths.isEmpty()) {
                 for (String imagePath : selectedImagePaths) {
