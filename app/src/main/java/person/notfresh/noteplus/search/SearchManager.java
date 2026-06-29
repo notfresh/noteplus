@@ -5,6 +5,9 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 import person.notfresh.noteplus.db.NoteDbHelper;
 
 /**
@@ -20,12 +23,14 @@ public class SearchManager {
     private NoteIndexer noteIndexer;
     private SearchService searchService;
     private final Handler mainHandler;
-    private boolean isIndexing = false;
+    private volatile boolean isIndexing = false;
+    private final ExecutorService executorService;
 
     private SearchManager(Context context) {
         this.context = context.getApplicationContext();
         this.dbHelper = NoteDbHelper.getInstance(this.context);
         this.mainHandler = new Handler(Looper.getMainLooper());
+        this.executorService = Executors.newCachedThreadPool();
         initServices();
     }
 
@@ -53,12 +58,12 @@ public class SearchManager {
      * @param timestamp 时间戳
      */
     public void indexNote(long noteId, String content, long timestamp) {
-        new Thread(() -> {
+        executorService.execute(() -> {
             boolean success = noteIndexer.indexNote(noteId, content, timestamp);
             if (!success) {
                 Log.w(TAG, "笔记 " + noteId + " 索引失败");
             }
-        }).start();
+        });
     }
 
     /**
@@ -66,9 +71,9 @@ public class SearchManager {
      * @param noteId 笔记ID
      */
     public void deleteNoteIndex(long noteId) {
-        new Thread(() -> {
+        executorService.execute(() -> {
             noteIndexer.deleteNoteIndex(noteId);
-        }).start();
+        });
     }
 
     /**
@@ -80,10 +85,10 @@ public class SearchManager {
         if (callback == null) {
             return;
         }
-        new Thread(() -> {
+        executorService.execute(() -> {
             java.util.List<SearchResult> results = searchService.search(query);
             mainHandler.post(() -> callback.onSearchResult(results));
-        }).start();
+        });
     }
 
     /**
@@ -96,7 +101,7 @@ public class SearchManager {
             return;
         }
         isIndexing = true;
-        new Thread(() -> {
+        executorService.execute(() -> {
             int count = noteIndexer.indexUnindexedNotes((current, total) -> {
                 if (callback != null) {
                     mainHandler.post(() -> callback.accept(current, total));
@@ -104,7 +109,7 @@ public class SearchManager {
             });
             isIndexing = false;
             Log.i(TAG, "批量索引完成，共 " + count + " 条");
-        }).start();
+        });
     }
 
     /**
@@ -117,6 +122,8 @@ public class SearchManager {
         if (searchService != null) {
             searchService.close();
         }
+        executorService.shutdown();
+        instance = null;
     }
 
     /**
