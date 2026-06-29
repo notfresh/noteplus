@@ -405,6 +405,10 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             // 代替的方法是切换到默认项目，这会确保当前数据库关闭
             projectManager.switchToProject("default");
         }
+        // 清理搜索相关的 handler
+        if (searchHandler != null) {
+            searchHandler.removeCallbacksAndMessages(null);
+        }
     }
 
     /**
