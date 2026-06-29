@@ -22,4 +22,12 @@
         android:textSize="12sp"
         android:textColor="?android:attr/textColorSecondary" />
 
+    <TextView
+        android:id="@+id/search_result_project"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:textSize="12sp"
+        android:textColor="?android:attr/textColorSecondary" />
+
 </LinearLayout>

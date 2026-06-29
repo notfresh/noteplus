@@ -16,7 +16,7 @@ import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.Directory;
-import org.apache.lucene.analysis.standard.StandardAnalyzer;
+import org.wltea.analyzer.lucene.IKAnalyzer;
 
 import java.io.File;
 import java.io.IOException;
@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import person.notfresh.noteplus.db.NoteDbHelper;
+import person.notfresh.noteplus.db.ProjectContextManager;
 
 /**
  * 搜索服务
@@ -35,17 +36,18 @@ public class SearchService {
     private static final String FIELD_ID = "id";
     private static final String FIELD_CONTENT = "content";
     private static final String FIELD_TIMESTAMP = "timestamp";
+    private static final String FIELD_PROJECT_NAME = "projectName";
     private static final int MAX_SEARCH_RESULTS = 100;
 
     private final Context context;
-    private final NoteDbHelper dbHelper;
+    private final ProjectContextManager projectContextManager;
     private Analyzer searchAnalyzer;  // 搜索时用智能分词
     private Directory indexDirectory;
     private boolean indexInitialized = false;
 
-    public SearchService(Context context, NoteDbHelper dbHelper) {
+    public SearchService(Context context, ProjectContextManager projectContextManager) {
         this.context = context.getApplicationContext();
-        this.dbHelper = dbHelper;
+        this.projectContextManager = projectContextManager;
         initIndex();
     }
 
@@ -56,7 +58,7 @@ public class SearchService {
                 indexDir.mkdirs();
             }
             indexDirectory = new org.apache.lucene.store.NIOFSDirectory(indexDir.toPath());
-            searchAnalyzer = new StandardAnalyzer();
+            searchAnalyzer = new IKAnalyzer(true);
             indexInitialized = true;
         } catch (IOException e) {
             Log.e(TAG, "搜索服务初始化失败", e);
@@ -144,9 +146,19 @@ public class SearchService {
                 long noteId = doc.getField(FIELD_ID).numericValue().longValue();
                 String content = doc.getField(FIELD_CONTENT).stringValue();
                 long timestamp = doc.getField(FIELD_TIMESTAMP).numericValue().longValue();
+                // projectName 字段可能在旧索引中不存在
+                org.apache.lucene.index.IndexableField projectNameField = doc.getField(FIELD_PROJECT_NAME);
+                String projectName = projectNameField != null ? projectNameField.stringValue() : "default";
+
+                // 根据 projectName 获取对应的数据库Helper
+                NoteDbHelper noteDbHelper = projectContextManager.getDbHelperForProject(projectName);
+                if (noteDbHelper == null) {
+                    Log.w(TAG, "无法获取项目 " + projectName + " 的数据库Helper，跳过该结果");
+                    continue;
+                }
 
                 // 获取对应的 Note 对象
-                noteCursor = dbHelper.getWritableDatabase().query(
+                noteCursor = noteDbHelper.getWritableDatabase().query(
                         NoteDbHelper.TABLE_NOTES,
                         new String[]{NoteDbHelper.COLUMN_ID, NoteDbHelper.COLUMN_CONTENT,
                                 NoteDbHelper.COLUMN_TIMESTAMP, NoteDbHelper.COLUMN_COST,
@@ -165,6 +177,7 @@ public class SearchService {
                             noteCursor.getDouble(noteCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COST)),
                             noteCursor.getInt(noteCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_IS_PINNED)) == 1
                     );
+                    note.setProjectName(projectName);
                 }
 
                 // 无论如何都要关闭 cursor

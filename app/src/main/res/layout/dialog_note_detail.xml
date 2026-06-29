@@ -11,7 +11,10 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:padding="16dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp"
+        android:paddingStart="16dp"
+        android:paddingEnd="0dp"
         android:background="?attr/colorPrimary">
 
         <TextView
@@ -29,7 +32,12 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="关闭"
-            android:minWidth="100dp" />
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:textColor="#FFFFFF" />
     </LinearLayout>
 
     <!-- 整体内容区域（可滚动，包含Note和Comment） -->
@@ -175,7 +183,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:gravity="end"
+        android:gravity="end|center_vertical"
         android:paddingStart="8dp"
         android:paddingEnd="8dp"
         android:paddingTop="8dp"
@@ -188,7 +196,6 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="追加内容"
-            android:layout_marginEnd="8dp"
             android:minWidth="100dp" />
 
         <Button
@@ -196,6 +203,15 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="编辑"
+            android:layout_marginStart="8dp"
+            android:minWidth="100dp" />
+
+        <Button
+            android:id="@+id/btnCloseDetailBottom"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="关闭"
+            android:layout_marginStart="8dp"
             android:minWidth="100dp" />
     </LinearLayout>
 

@@ -36,6 +36,8 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.MotionEvent;
 import android.provider.MediaStore;
 import android.provider.Settings;
@@ -105,6 +107,7 @@ import person.notfresh.noteplus.core.model.Comment;
 
 import person.notfresh.noteplus.util.NotificationHelper;
 import person.notfresh.noteplus.util.ReminderScheduler;
+import person.notfresh.noteplus.util.SearchIndexInitWorker;
 import person.notfresh.noteplus.util.StringUtil;
 import person.notfresh.noteplus.util.DisplayUtil;
 import person.notfresh.noteplus.util.ImageUtil;
@@ -118,7 +121,6 @@ import person.notfresh.noteplus.widget.NoteWidgetProvider;
 import person.notfresh.noteplus.search.SearchManager;
 import person.notfresh.noteplus.search.SearchResult;
 import person.notfresh.noteplus.search.SearchResultAdapter;
-import person.notfresh.noteplus.util.SearchIndexInitWorker;
 
 
 public class MainActivity extends AppCompatActivity implements INoteListCallback {
@@ -234,6 +236,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
 
     // 搜索相关
     private boolean isSearchMode = false;
+    private View searchContainer;
     private EditText searchEditText;
     private ListView searchResultListView;
     private SearchResultAdapter searchResultAdapter;
@@ -241,6 +244,13 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     private SearchManager searchManager;
     private Handler searchHandler = new Handler();
     private Runnable searchRunnable;
+    private MenuItem searchMenuItem;
+
+    // 添加笔记相关容器（搜索时隐藏）
+    private View inputContainer;       // 输入框+保存按钮那一行
+    private View timeRangeContainer;   // 时间区间容器
+    private View costContainer;        // 花费容器
+    private View tagContainer;         // 标签容器
 
 
     @Override
@@ -313,9 +323,24 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         }
 
         // 初始化搜索管理器
-        searchManager = SearchManager.getInstance(this);
-        // 检查并构建未索引笔记
-        SearchIndexInitWorker.schedule(this);
+        String currentProject = projectManager != null ? projectManager.getCurrentProject() : "default";
+        searchManager = SearchManager.getInstance(this, dbHelper, projectManager, currentProject);
+        initSearchUi();
+
+        // 检查索引是否存在且版本匹配
+        if (!searchManager.isIndexReady()) {
+            SearchIndexInitWorker.schedule(this);
+        } else {
+            // 索引已就绪，检查是否首次完成（需要显示提示）
+            android.content.SharedPreferences prefs = getSharedPreferences("search_index_prefs", MODE_PRIVATE);
+            if (!prefs.getBoolean("search_index_built", false)) {
+                Toast.makeText(this, "搜索索引已就绪", Toast.LENGTH_SHORT).show();
+                prefs.edit().putBoolean("search_index_built", true).apply();
+            }
+        }
+
+        // 触发当前项目的未索引笔记补建
+        searchManager.indexUnindexedNotes(null);
 
         // 处理来自Widget的跳转请求
         handleWidgetIntent(getIntent());
@@ -408,6 +433,78 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         // 清理搜索相关的 handler
         if (searchHandler != null) {
             searchHandler.removeCallbacksAndMessages(null);
+        }
+        if (searchManager != null) {
+            searchManager.release();
+            searchManager = null;
+        }
+    }
+
+    private void initSearchUi() {
+        searchContainer = findViewById(R.id.searchContainer);
+        searchEditText = findViewById(R.id.searchEditText);
+        searchResultListView = findViewById(R.id.searchResultListView);
+        ImageButton searchCloseButton = findViewById(R.id.searchCloseButton);
+
+        // 初始化添加笔记相关容器（搜索时隐藏）
+        inputContainer = findViewById(R.id.inputContainer);
+        timeRangeContainer = findViewById(R.id.timeRangeContainer);
+        costContainer = findViewById(R.id.costContainer);
+        tagContainer = findViewById(R.id.tagContainer);
+
+        if (searchResultListView != null) {
+            searchResultAdapter = new SearchResultAdapter(this, searchResults);
+            searchResultListView.setAdapter(searchResultAdapter);
+            searchResultListView.setOnItemClickListener((parent, view, position, id) -> {
+                if (position < 0 || position >= searchResults.size()) {
+                    return;
+                }
+                SearchResult result = searchResults.get(position);
+                long noteId = result.getNote().getId();
+                String projectName = result.getNote().getProjectName();
+                // 直接显示详情弹窗，不退出搜索模式，保持搜索结果列表可见
+                if (projectName != null && !projectName.isEmpty()) {
+                    loadNoteDetail(noteId, projectName);
+                }
+            });
+        }
+
+        if (searchCloseButton != null) {
+            searchCloseButton.setOnClickListener(v -> {
+                if (searchEditText != null) {
+                    searchEditText.setText("");
+                    searchEditText.requestFocus();
+                    InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                    if (imm != null) {
+                        imm.showSoftInput(searchEditText, InputMethodManager.SHOW_IMPLICIT);
+                    }
+                }
+            });
+        }
+
+        if (searchEditText != null) {
+            searchEditText.addTextChangedListener(new TextWatcher() {
+                @Override
+                public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+                }
+
+                @Override
+                public void onTextChanged(CharSequence s, int start, int before, int count) {
+                    performSearch(s == null ? "" : s.toString());
+                }
+
+                @Override
+                public void afterTextChanged(Editable s) {
+                }
+            });
+
+            searchEditText.setOnEditorActionListener((v, actionId, event) -> {
+                if (actionId == EditorInfo.IME_ACTION_SEARCH || actionId == EditorInfo.IME_ACTION_DONE) {
+                    performSearch(v.getText().toString());
+                    return true;
+                }
+                return false;
+            });
         }
     }
 
@@ -743,7 +840,8 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
 
             // 事务提交后更新索引
             if (noteId > 0 && searchManager != null) {
-                searchManager.indexNote(noteId, content, System.currentTimeMillis());
+                String currentProject = projectManager != null ? projectManager.getCurrentProject() : "default";
+                searchManager.indexNote(noteId, content, System.currentTimeMillis(), currentProject);
             }
         }
     }
@@ -996,10 +1094,14 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         });
 
         // 获取搜索菜单项
-        MenuItem searchItem = menu.findItem(R.id.action_search);
-        if (searchItem != null) {
-            searchItem.setOnMenuItemClickListener(item -> {
-                enterSearchMode();
+        searchMenuItem = menu.findItem(R.id.action_search);
+        if (searchMenuItem != null) {
+            searchMenuItem.setOnMenuItemClickListener(item -> {
+                if (isSearchMode) {
+                    exitSearchMode();
+                } else {
+                    enterSearchMode();
+                }
                 return true;
             });
         }
@@ -1008,26 +1110,120 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     }
 
     private void enterSearchMode() {
+        if (isSearchMode) {
+            return;
+        }
         isSearchMode = true;
-        // TODO: 根据你的布局实现搜索模式 UI 切换
-        // 可能需要隐藏原有内容，显示搜索框
-        Toast.makeText(this, "进入搜索模式", Toast.LENGTH_SHORT).show();
+
+        // 显示搜索相关
+        if (searchContainer != null) {
+            searchContainer.setVisibility(View.VISIBLE);
+        }
+        if (searchResultListView != null) {
+            searchResultListView.setVisibility(View.VISIBLE);
+        }
+        if (momentsListView != null) {
+            momentsListView.setVisibility(View.GONE);
+        }
+
+        // 隐藏添加笔记相关组件
+        if (inputContainer != null) {
+            inputContainer.setVisibility(View.GONE);
+        }
+        if (timeRangeContainer != null) {
+            timeRangeContainer.setVisibility(View.GONE);
+        }
+        if (costContainer != null) {
+            costContainer.setVisibility(View.GONE);
+        }
+        if (tagContainer != null) {
+            tagContainer.setVisibility(View.GONE);
+        }
+
+        if (searchEditText != null) {
+            searchEditText.requestFocus();
+            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.showSoftInput(searchEditText, InputMethodManager.SHOW_IMPLICIT);
+            }
+        }
+
+        if (searchMenuItem != null) {
+            searchMenuItem.setIcon(android.R.drawable.ic_menu_close_clear_cancel);
+            searchMenuItem.setTitle("关闭搜索");
+        }
     }
 
     private void exitSearchMode() {
+        if (!isSearchMode) {
+            return;
+        }
         isSearchMode = false;
+
+        if (searchRunnable != null) {
+            searchHandler.removeCallbacks(searchRunnable);
+            searchRunnable = null;
+        }
+
         if (searchEditText != null) {
             searchEditText.setText("");
+            searchEditText.clearFocus();
+            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.hideSoftInputFromWindow(searchEditText.getWindowToken(), 0);
+            }
         }
+
+        if (searchContainer != null) {
+            searchContainer.setVisibility(View.GONE);
+        }
+        if (searchResultListView != null) {
+            searchResultListView.setVisibility(View.GONE);
+        }
+        if (momentsListView != null) {
+            momentsListView.setVisibility(View.VISIBLE);
+        }
+
+        // 恢复添加笔记相关组件显示
+        if (inputContainer != null) {
+            inputContainer.setVisibility(View.VISIBLE);
+        }
+        if (timeRangeContainer != null) {
+            timeRangeContainer.setVisibility(View.VISIBLE);
+        }
+        if (costContainer != null) {
+            costContainer.setVisibility(View.VISIBLE);
+        }
+        if (tagContainer != null) {
+            tagContainer.setVisibility(View.VISIBLE);
+        }
+
         searchResults.clear();
         if (searchResultAdapter != null) {
             searchResultAdapter.notifyDataSetChanged();
         }
-        // TODO: 恢复原有内容
+
+        if (searchMenuItem != null) {
+            searchMenuItem.setIcon(android.R.drawable.ic_menu_search);
+            searchMenuItem.setTitle("搜索");
+        }
     }
 
     private void performSearch(String query) {
-        if (searchManager == null || query.trim().isEmpty()) {
+        if (searchManager == null) {
+            return;
+        }
+
+        String trimmed = query == null ? "" : query.trim();
+        if (trimmed.isEmpty()) {
+            if (searchRunnable != null) {
+                searchHandler.removeCallbacks(searchRunnable);
+                searchRunnable = null;
+            }
+            searchResults.clear();
+            if (searchResultAdapter != null) {
+                searchResultAdapter.notifyDataSetChanged();
+            }
             return;
         }
 
@@ -1036,13 +1232,18 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             searchHandler.removeCallbacks(searchRunnable);
         }
         searchRunnable = () -> {
-            searchManager.search(query, results -> {
+            searchManager.search(trimmed, results -> {
                 searchResults.clear();
                 searchResults.addAll(results);
                 if (searchResultAdapter != null) {
                     searchResultAdapter.notifyDataSetChanged();
                 }
-                if (results.isEmpty()) {
+                // 有结果时只显示结果列表，搜索框保持显示
+                if (!results.isEmpty()) {
+                    if (searchResultListView != null) {
+                        searchResultListView.setVisibility(View.VISIBLE);
+                    }
+                } else {
                     Toast.makeText(MainActivity.this, "未找到相关笔记", Toast.LENGTH_SHORT).show();
                 }
             });
@@ -1556,6 +1757,10 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                 if (projectManager.renameProject(oldName, newName)) {
                     Toast.makeText(this, "项目已重命名", Toast.LENGTH_SHORT).show();
                     updateTitle();
+                    // 重建搜索索引（项目重命名后索引中的旧项目名会失效）
+                    if (searchManager != null) {
+                        searchManager.rebuildIndex();
+                    }
                 } else {
                     Toast.makeText(this, "重命名失败", Toast.LENGTH_SHORT).show();
                 }
@@ -1673,6 +1878,11 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                     dbHelper.close();
                 }
                 dbHelper = projectManager.getCurrentDbHelper();
+
+                if (searchManager != null) {
+                    searchManager.rebindDbHelper(dbHelper, projectName);
+                    searchManager.indexUnindexedNotes(null);
+                }
                 
                 // 更新导入导出管理器
                 importExportManager = new person.notfresh.noteplus.manager.ImportExportManager(
@@ -3045,6 +3255,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         // 获取UI组件
         TextView detailTitle = dialogView.findViewById(R.id.detailTitle);
         Button btnCloseDetail = dialogView.findViewById(R.id.btnCloseDetail);
+        Button btnCloseDetailBottom = dialogView.findViewById(R.id.btnCloseDetailBottom);
         Button btnEditDetail = dialogView.findViewById(R.id.btnEditDetail);
         TextView detailProjectName = dialogView.findViewById(R.id.detailProjectName);
         TextView detailNoteContent = dialogView.findViewById(R.id.detailNoteContent);
@@ -3087,7 +3298,14 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         
         // 创建对话框
         AlertDialog dialog = builder.create();
-        
+
+        // 移除对话框窗口的默认内边距，让内容占满整个窗口
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawableResource(android.R.color.white);
+            window.getDecorView().setPadding(0, 0, 0, 0);
+        }
+
         // 设置标题
         detailTitle.setText("Note详情");
         
@@ -3170,6 +3388,14 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         
         // 设置关闭按钮事件
         btnCloseDetail.setOnClickListener(v -> {
+            if (tagsCursor != null && !tagsCursor.isClosed()) {
+                tagsCursor.close();
+            }
+            dialog.dismiss();
+        });
+
+        // 设置底部关闭按钮事件
+        btnCloseDetailBottom.setOnClickListener(v -> {
             if (tagsCursor != null && !tagsCursor.isClosed()) {
                 tagsCursor.close();
             }

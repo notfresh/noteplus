@@ -15,12 +15,15 @@ import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.SimpleFSLockFactory;
+import org.wltea.analyzer.lucene.IKAnalyzer;
 
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 
 import person.notfresh.noteplus.db.NoteDbHelper;
+import person.notfresh.noteplus.db.ProjectContextManager;
 
 /**
  * 笔记索引构建器
@@ -32,20 +35,21 @@ import person.notfresh.noteplus.db.NoteDbHelper;
  */
 public class NoteIndexer implements Closeable {
     private static final String TAG = "NoteIndexer";
-    private static final String INDEX_DIR = "search_index";
+    public static final String INDEX_DIR = "search_index";
     private static final String FIELD_ID = "id";
     private static final String FIELD_CONTENT = "content";
     private static final String FIELD_TIMESTAMP = "timestamp";
+    private static final String FIELD_PROJECT_NAME = "projectName";
 
     private final Context context;
-    private final NoteDbHelper dbHelper;
+    private final ProjectContextManager projectContextManager;
     private Analyzer analyzer;
     private Directory indexDirectory;
     private IndexWriter indexWriter;
 
-    public NoteIndexer(Context context, NoteDbHelper dbHelper) {
+    public NoteIndexer(Context context, ProjectContextManager projectContextManager) {
         this.context = context.getApplicationContext();
-        this.dbHelper = dbHelper;
+        this.projectContextManager = projectContextManager;
         initIndex();
     }
 
@@ -56,7 +60,7 @@ public class NoteIndexer implements Closeable {
                 indexDir.mkdirs();
             }
             indexDirectory = new org.apache.lucene.store.NIOFSDirectory(indexDir.toPath());
-            analyzer = new org.apache.lucene.analysis.standard.StandardAnalyzer();
+            analyzer = new IKAnalyzer(true);
             IndexWriterConfig config = new IndexWriterConfig(analyzer);
             indexWriter = new IndexWriter(indexDirectory, config);
             Log.i(TAG, "索引初始化成功，索引目录: " + indexDir.getAbsolutePath());
@@ -70,9 +74,10 @@ public class NoteIndexer implements Closeable {
      * @param noteId 笔记ID
      * @param content 笔记内容
      * @param timestamp 时间戳
+     * @param projectName 项目名称
      * @return 是否成功
      */
-    public boolean indexNote(long noteId, String content, long timestamp) {
+    public boolean indexNote(long noteId, String content, long timestamp, String projectName) {
         if (indexWriter == null) {
             Log.e(TAG, "索引写入器未初始化");
             return false;
@@ -88,12 +93,16 @@ public class NoteIndexer implements Closeable {
             doc.add(new TextField(FIELD_CONTENT, content, Field.Store.YES));
             doc.add(new LongPoint(FIELD_TIMESTAMP, timestamp));
             doc.add(new StoredField(FIELD_TIMESTAMP, timestamp));
+            doc.add(new StoredField(FIELD_PROJECT_NAME, projectName));
 
             indexWriter.addDocument(doc);
             indexWriter.commit();
 
-            // 标记为已索引
-            dbHelper.markNoteIndexed(noteId);
+            // 标记为已索引（使用对应项目的dbHelper）
+            NoteDbHelper noteDbHelper = projectContextManager.getDbHelperForProject(projectName);
+            if (noteDbHelper != null) {
+                noteDbHelper.markNoteIndexed(noteId);
+            }
             Log.d(TAG, "笔记 " + noteId + " 索引构建成功");
             return true;
         } catch (IOException e) {
@@ -103,7 +112,7 @@ public class NoteIndexer implements Closeable {
     }
 
     /**
-     * 从索引中删除指定笔记
+     * 从索引中删除指定笔记（仅从索引中删除，不处理数据库标记）
      * @param noteId 笔记ID
      * @return 是否成功
      */
@@ -115,7 +124,6 @@ public class NoteIndexer implements Closeable {
         try {
             indexWriter.deleteDocuments(new Term(FIELD_ID, String.valueOf(noteId)));
             indexWriter.commit();
-            dbHelper.unmarkNoteIndexed(noteId);
             Log.d(TAG, "笔记 " + noteId + " 从索引中删除");
             return true;
         } catch (IOException e) {
@@ -125,41 +133,58 @@ public class NoteIndexer implements Closeable {
     }
 
     /**
-     * 批量构建未索引笔记的索引
+     * 批量构建未索引笔记的索引（跨所有项目）
      * @param progressCallback 进度回调 (current, total)
      * @return 成功构建的数量
      */
     public int indexUnindexedNotes(java.util.function.BiConsumer<Integer, Integer> progressCallback) {
-        Cursor cursor = dbHelper.getUnindexedNotes();
+        List<String> projects = projectContextManager.getProjectList();
         int count = 0;
-        int total = cursor.getCount();
-        Log.i(TAG, "发现 " + total + " 条未索引笔记");
+        int total = 0;
 
-        try {
-            while (cursor.moveToNext()) {
-                long noteId = cursor.getLong(cursor.getColumnIndexOrThrow("_id"));
-                // 获取笔记完整信息
-                Cursor noteCursor = dbHelper.getWritableDatabase().query(
-                        NoteDbHelper.TABLE_NOTES,
-                        new String[]{NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP},
-                        NoteDbHelper.COLUMN_ID + "=?",
-                        new String[]{String.valueOf(noteId)},
-                        null, null, null
-                );
-                if (noteCursor != null && noteCursor.moveToFirst()) {
-                    String content = noteCursor.getString(noteCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_CONTENT));
-                    long timestamp = noteCursor.getLong(noteCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TIMESTAMP));
-                    if (indexNote(noteId, content, timestamp)) {
-                        count++;
-                    }
-                    noteCursor.close();
-                }
-                if (progressCallback != null) {
-                    progressCallback.accept(count, total);
-                }
+        // 先统计所有未索引笔记总数
+        for (String projectName : projects) {
+            NoteDbHelper dbHelper = projectContextManager.getDbHelperForProject(projectName);
+            if (dbHelper != null) {
+                total += dbHelper.getUnindexedNotes().getCount();
             }
-        } finally {
-            cursor.close();
+        }
+        Log.i(TAG, "发现 " + total + " 条未索引笔记（跨 " + projects.size() + " 个项目）");
+
+        // 遍历所有项目索引
+        for (String projectName : projects) {
+            NoteDbHelper dbHelper = projectContextManager.getDbHelperForProject(projectName);
+            if (dbHelper == null) {
+                continue;
+            }
+
+            Cursor cursor = dbHelper.getUnindexedNotes();
+            try {
+                while (cursor.moveToNext()) {
+                    long noteId = cursor.getLong(cursor.getColumnIndexOrThrow("_id"));
+                    // 获取笔记完整信息
+                    Cursor noteCursor = dbHelper.getWritableDatabase().query(
+                            NoteDbHelper.TABLE_NOTES,
+                            new String[]{NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP},
+                            NoteDbHelper.COLUMN_ID + "=?",
+                            new String[]{String.valueOf(noteId)},
+                            null, null, null
+                    );
+                    if (noteCursor != null && noteCursor.moveToFirst()) {
+                        String content = noteCursor.getString(noteCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_CONTENT));
+                        long timestamp = noteCursor.getLong(noteCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TIMESTAMP));
+                        if (indexNote(noteId, content, timestamp, projectName)) {
+                            count++;
+                        }
+                        noteCursor.close();
+                    }
+                    if (progressCallback != null) {
+                        progressCallback.accept(count, total);
+                    }
+                }
+            } finally {
+                cursor.close();
+            }
         }
         Log.i(TAG, "批量索引构建完成，成功 " + count + " 条");
         return count;

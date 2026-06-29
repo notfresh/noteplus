@@ -16,6 +16,8 @@ import java.util.Set;
  * 管理项目上下文和对应的数据库
  */
 public class ProjectContextManager {
+    private static volatile ProjectContextManager instance;
+
     private static final String PREF_NAME = "project_context_prefs";
     private static final String KEY_CURRENT_PROJECT = "current_project";
     private static final String KEY_PROJECT_LIST = "project_list";
@@ -61,7 +63,21 @@ public class ProjectContextManager {
         
         initializeDbHelper();
     }
-    
+
+    /**
+     * 获取单例实例
+     */
+    public static ProjectContextManager getInstance(Context context) {
+        if (instance == null) {
+            synchronized (ProjectContextManager.class) {
+                if (instance == null) {
+                    instance = new ProjectContextManager(context.getApplicationContext());
+                }
+            }
+        }
+        return instance;
+    }
+
     /**
      * 初始化当前数据库Helper
      */

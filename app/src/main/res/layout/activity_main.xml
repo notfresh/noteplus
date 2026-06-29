@@ -15,6 +15,36 @@
 		app:title="时间戳记录" />
 
 	<LinearLayout
+		android:id="@+id/searchContainer"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:orientation="horizontal"
+		android:padding="8dp"
+		android:visibility="gone">
+
+		<EditText
+			android:id="@+id/searchEditText"
+			android:layout_width="0dp"
+			android:layout_height="wrap_content"
+			android:layout_weight="1"
+			android:hint="搜索笔记内容"
+			android:imeOptions="actionSearch"
+			android:inputType="text"
+			android:maxLines="1"
+			android:padding="12dp" />
+
+		<ImageButton
+			android:id="@+id/searchCloseButton"
+			android:layout_width="40dp"
+			android:layout_height="40dp"
+			android:layout_marginStart="8dp"
+			android:background="?attr/selectableItemBackgroundBorderless"
+			android:contentDescription="清空搜索关键词"
+			android:src="@android:drawable/ic_menu_close_clear_cancel" />
+	</LinearLayout>
+
+	<LinearLayout
+		android:id="@+id/inputContainer"
 		android:layout_width="match_parent"
 		android:layout_height="wrap_content"
 		android:orientation="horizontal"
@@ -222,8 +252,18 @@
 	<ListView
 		android:id="@+id/momentsListView"
 		android:layout_width="match_parent"
-		android:layout_height="match_parent"
+		android:layout_height="0dp"
+		android:layout_weight="1"
 		android:divider="@android:color/darker_gray"
 		android:dividerHeight="1dp" />
+
+	<ListView
+		android:id="@+id/searchResultListView"
+		android:layout_width="match_parent"
+		android:layout_height="0dp"
+		android:layout_weight="1"
+		android:divider="@android:color/darker_gray"
+		android:dividerHeight="1dp"
+		android:visibility="gone" />
 
 </LinearLayout>

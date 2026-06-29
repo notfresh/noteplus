@@ -45,10 +45,13 @@ dependencies {
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.work:work-runtime:2.8.1")
 
-    // Lucene 核心
-    implementation("org.apache.lucene:lucene-core:9.10.0")
-    implementation("org.apache.lucene:lucene-analysis-common:9.10.0")
-    implementation("org.apache.lucene:lucene-queryparser:9.10.0")
+    // Lucene 核心（9.x 在 Android 上会触发 Runtime.version()，固定到 8.5.0）
+    implementation("org.apache.lucene:lucene-core:8.5.0")
+    implementation("org.apache.lucene:lucene-analyzers-common:8.5.0")
+    implementation("org.apache.lucene:lucene-queryparser:8.5.0")
+
+    // IK 中文分词（Maven Central，可替代 JitPack 方案）
+    implementation("com.github.magese:ik-analyzer:8.5.0")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.ext.junit)

@@ -85,6 +85,10 @@ public class NoteDbHelper extends SQLiteOpenHelper {
     public static final String KEY_TIME_DESC_ORDER = "time_desc_order";
     public static final String KEY_FOLD_DISPLAY_LENGTH = "fold_display_length";
 
+    // 搜索索引版本（与数据库版本独立）
+    public static final int SEARCH_INDEX_VERSION = 3;
+    public static final String PREF_SEARCH_INDEX_VERSION = "search_search_index_version";
+
     private static final String DATABASE_CREATE = "create table "
             + TABLE_NOTES + "(" 
             + COLUMN_ID + " integer primary key autoincrement, "

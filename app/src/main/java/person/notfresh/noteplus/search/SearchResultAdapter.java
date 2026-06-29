@@ -26,6 +26,7 @@ public class SearchResultAdapter extends ArrayAdapter<SearchResult> {
     private static class ViewHolder {
         TextView contentView;
         TextView timeView;
+        TextView projectView;
     }
 
     public SearchResultAdapter(@NonNull Context context, @NonNull List<SearchResult> objects) {
@@ -41,6 +42,7 @@ public class SearchResultAdapter extends ArrayAdapter<SearchResult> {
             holder = new ViewHolder();
             holder.contentView = convertView.findViewById(R.id.search_result_content);
             holder.timeView = convertView.findViewById(R.id.search_result_time);
+            holder.projectView = convertView.findViewById(R.id.search_result_project);
             convertView.setTag(holder);
         } else {
             holder = (ViewHolder) convertView.getTag();
@@ -50,6 +52,8 @@ public class SearchResultAdapter extends ArrayAdapter<SearchResult> {
         if (result != null) {
             holder.contentView.setText(result.getHighlightedContent());
             holder.timeView.setText(DATE_FORMAT.format(new Date(result.getNote().getTimestamp())));
+            String projectName = result.getNote().getProjectName();
+            holder.projectView.setText(projectName != null ? projectName : "");
         }
 
         return convertView;
