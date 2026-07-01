@@ -5607,10 +5607,259 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     }
 
     /**
-     * 合并选中的笔记（暂未实现）
+     * 执行笔记合并操作
+     * 将多个选中的笔记合并为一个新笔记，原笔记放入回收站
      */
     private void mergeSelectedNotes() {
-        Toast.makeText(this, "合并功能暂未实现", Toast.LENGTH_SHORT).show();
+        if (selectedNoteIds == null || selectedNoteIds.size() < 2) {
+            Toast.makeText(this, "请至少选择2条笔记进行合并", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // 显示进度对话框
+        ProgressDialog progressDialog = new ProgressDialog(this);
+        progressDialog.setMessage("正在合并笔记...");
+        progressDialog.setCancelable(false);
+        progressDialog.show();
+
+        new Thread(() -> {
+            try {
+                // 按ID排序（ID通常与创建顺序相关）
+                List<Long> sortedIds = new ArrayList<>(selectedNoteIds);
+                Collections.sort(sortedIds);
+
+                // 构建合并后的内容
+                StringBuilder mergedContent = new StringBuilder();
+
+                // 用于收集所有标签
+                Set<String> allTags = new HashSet<>();
+                // 用于收集所有图片
+                List<String> allImages = new ArrayList<>();
+                // 用于收集所有音频
+                List<AudioAttachment> allAudio = new ArrayList<>();
+
+                for (int i = 0; i < sortedIds.size(); i++) {
+                    long noteId = sortedIds.get(i);
+
+                    // 获取笔记基本信息
+                    Cursor noteCursor = dbHelper.getReadableDatabase().query(
+                            NoteDbHelper.TABLE_NOTES,
+                            new String[]{NoteDbHelper.COLUMN_ID, NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP, NoteDbHelper.COLUMN_COST},
+                            NoteDbHelper.COLUMN_ID + " = ?",
+                            new String[]{String.valueOf(noteId)},
+                            null, null, null
+                    );
+
+                    if (noteCursor == null || !noteCursor.moveToFirst()) {
+                        if (noteCursor != null) noteCursor.close();
+                        continue;
+                    }
+
+                    String content = noteCursor.getString(noteCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_CONTENT));
+                    long timestamp = noteCursor.getLong(noteCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TIMESTAMP));
+                    double cost = noteCursor.getDouble(noteCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COST));
+                    noteCursor.close();
+
+                    // 获取时间范围字符串
+                    String timeStr = getNoteTimeStringForMerge(noteId, timestamp);
+                    mergedContent.append(timeStr).append("\n");
+
+                    // 如果有花费
+                    if (cost > 0) {
+                        mergedContent.append("Cost: ").append(String.format(Locale.getDefault(), "%.2f", cost)).append("\n");
+                    }
+
+                    // 获取标签
+                    List<String> tags = getTagsForNote(noteId);
+                    if (!tags.isEmpty()) {
+                        allTags.addAll(tags);
+                        mergedContent.append("Tags: ").append(String.join(", ", tags)).append("\n");
+                    }
+
+                    // 笔记内容
+                    mergedContent.append(content).append("\n");
+
+                    // 获取评论
+                    List<String> comments = getCommentsForNote(noteId);
+                    if (!comments.isEmpty()) {
+                        mergedContent.append("comments:\n");
+                        for (int j = 0; j < comments.size(); j++) {
+                            mergedContent.append("comment").append(j + 1).append(": ").append(comments.get(j)).append("\n");
+                        }
+                    }
+
+                    if (i < sortedIds.size() - 1) {
+                        mergedContent.append("---\n");
+                    }
+
+                    // 收集图片
+                    List<String> images = dbHelper.getNoteImagePaths(noteId);
+                    if (images != null && !images.isEmpty()) {
+                        allImages.addAll(images);
+                    }
+
+                    // 收集音频
+                    List<AudioAttachment> audioItems = dbHelper.getNoteAudioItems(noteId);
+                    if (audioItems != null && !audioItems.isEmpty()) {
+                        allAudio.addAll(audioItems);
+                    }
+                }
+
+                // 创建新笔记
+                SQLiteDatabase db = dbHelper.getWritableDatabase();
+                db.beginTransaction();
+                long newNoteId = -1;
+                try {
+                    ContentValues values = new ContentValues();
+                    values.put(NoteDbHelper.COLUMN_CONTENT, mergedContent.toString());
+                    values.put(NoteDbHelper.COLUMN_TIMESTAMP, System.currentTimeMillis());
+                    values.put(NoteDbHelper.COLUMN_COST, 0); // 合并后花费归零
+                    newNoteId = db.insert(NoteDbHelper.TABLE_NOTES, null, values);
+
+                    if (newNoteId > 0) {
+                        // 复制第一个笔记的时间范围（如果有）
+                        long firstNoteId = sortedIds.get(0);
+                        Cursor cursor = dbHelper.getTimeRangesForNote(firstNoteId);
+                        if (cursor != null && cursor.moveToFirst()) {
+                            long startTime = cursor.getLong(cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_START_TIME));
+                            long endTime = cursor.getLong(cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_END_TIME));
+                            dbHelper.saveTimeRange(newNoteId, startTime, endTime);
+                            cursor.close();
+                        }
+
+                        // 复制所有收集的图片
+                        for (String imagePath : allImages) {
+                            dbHelper.insertNoteImage(newNoteId, imagePath);
+                        }
+
+                        // 复制所有收集的音频
+                        for (AudioAttachment audio : allAudio) {
+                            if (audio != null && audio.getPath() != null) {
+                                dbHelper.insertNoteAudio(newNoteId, audio.getPath(), audio.getDurationMs());
+                            }
+                        }
+
+                        // 复制所有收集的标签
+                        for (String tagName : allTags) {
+                            // 获取标签ID
+                            long tagId = dbHelper.getTagIdByName(tagName);
+                            if (tagId == -1) {
+                                // 标签不存在，创建新标签（使用默认颜色）
+                                tagId = dbHelper.addTag(tagName, "#CCCCCC");
+                            }
+                            if (tagId != -1) {
+                                dbHelper.linkNoteToTag(newNoteId, tagId);
+                            }
+                        }
+
+                        // 将原笔记放入回收站
+                        for (long oldNoteId : sortedIds) {
+                            dbHelper.archiveNote(oldNoteId);
+                        }
+                    }
+
+                    db.setTransactionSuccessful();
+                } finally {
+                    db.endTransaction();
+                }
+
+                // 更新搜索索引
+                if (newNoteId > 0) {
+                    final long finalNewNoteId = newNoteId;
+                    runOnUiThread(() -> {
+                        searchManager.indexNote(finalNewNoteId, mergedContent.toString(), System.currentTimeMillis(), projectManager.getCurrentProject());
+                    });
+
+                    // 移除原笔记的索引
+                    for (long oldNoteId : sortedIds) {
+                        final long finalOldNoteId = oldNoteId;
+                        runOnUiThread(() -> {
+                            searchManager.deleteNoteIndex(finalOldNoteId);
+                        });
+                    }
+                }
+
+                final long finalNewNoteId2 = newNoteId;
+                runOnUiThread(() -> {
+                    progressDialog.dismiss();
+                    if (finalNewNoteId2 > 0) {
+                        Toast.makeText(MainActivity.this, "笔记合并成功", Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(MainActivity.this, "笔记合并失败", Toast.LENGTH_SHORT).show();
+                    }
+
+                    // 退出多选模式并刷新
+                    exitMultiSelectMode();
+                    if (noteListManager != null) {
+                        noteListManager.refreshNotes();
+                    }
+                });
+
+            } catch (Exception e) {
+                e.printStackTrace();
+                runOnUiThread(() -> {
+                    progressDialog.dismiss();
+                    Toast.makeText(MainActivity.this, "合并失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
+            }
+        }).start();
+    }
+
+    /**
+     * 获取笔记的时间字符串（用于合并内容）
+     */
+    private String getNoteTimeStringForMerge(long noteId, long timestamp) {
+        Cursor cursor = dbHelper.getTimeRangesForNote(noteId);
+        if (cursor != null && cursor.moveToFirst()) {
+            long startTime = cursor.getLong(cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_START_TIME));
+            long endTime = cursor.getLong(cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_END_TIME));
+            cursor.close();
+
+            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault());
+            return "[" + dateFormat.format(startTime) + "-" + dateFormat.format(endTime) + "]";
+        }
+        if (cursor != null) {
+            cursor.close();
+        }
+
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+        return "[" + sdf.format(timestamp) + "]";
+    }
+
+    /**
+     * 获取笔记的标签列表
+     */
+    private List<String> getTagsForNote(long noteId) {
+        List<String> tags = new ArrayList<>();
+        Cursor cursor = dbHelper.getTagsForNote(noteId);
+        if (cursor != null) {
+            while (cursor.moveToNext()) {
+                String tagName = cursor.getString(cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TAG_NAME));
+                if (tagName != null) {
+                    tags.add(tagName);
+                }
+            }
+            cursor.close();
+        }
+        return tags;
+    }
+
+    /**
+     * 获取笔记的评论内容列表
+     */
+    private List<String> getCommentsForNote(long noteId) {
+        List<String> comments = new ArrayList<>();
+        Cursor cursor = dbHelper.getCommentsForNote(noteId);
+        if (cursor != null) {
+            while (cursor.moveToNext()) {
+                String content = cursor.getString(cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_CONTENT));
+                if (content != null) {
+                    comments.add(content);
+                }
+            }
+            cursor.close();
+        }
+        return comments;
     }
 
     /**
