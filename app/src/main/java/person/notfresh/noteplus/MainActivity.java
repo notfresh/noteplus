@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -5526,6 +5527,90 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         
         builder.setNegativeButton("取消", null);
         builder.show();
+    }
+
+    /**
+     * 显示合并确认对话框
+     */
+    private void showMergeConfirmDialog() {
+        if (selectedNoteIds == null || selectedNoteIds.size() < 2) {
+            Toast.makeText(this, "请至少选择2条笔记进行合并", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // 构建合并预览内容
+        StringBuilder preview = new StringBuilder();
+        preview.append("将合并 ").append(selectedNoteIds.size()).append(" 条笔记：\n\n");
+
+        // 按时间排序后遍历
+        List<Long> sortedIds = new ArrayList<>(selectedNoteIds);
+        Collections.sort(sortedIds);
+
+        for (int i = 0; i < sortedIds.size(); i++) {
+            long noteId = sortedIds.get(i);
+
+            // 直接从数据库查询笔记内容
+            Cursor noteCursor = dbHelper.getReadableDatabase().query(
+                NoteDbHelper.TABLE_NOTES,
+                new String[]{"_id", NoteDbHelper.COLUMN_CONTENT, NoteDbHelper.COLUMN_TIMESTAMP},
+                "_id = ?",
+                new String[]{String.valueOf(noteId)},
+                null, null, null
+            );
+
+            if (noteCursor != null && noteCursor.moveToFirst()) {
+                String content = noteCursor.getString(noteCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_CONTENT));
+                long timestamp = noteCursor.getLong(noteCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TIMESTAMP));
+                noteCursor.close();
+
+                // 获取时间范围
+                String timeStr = getNoteTimeString(noteId, timestamp);
+                preview.append("• ").append(timeStr).append("\n");
+                preview.append("  ").append(content.substring(0, Math.min(30, content.length()))).append("...\n");
+            }
+            if (i < sortedIds.size() - 1) {
+                preview.append("\n");
+            }
+        }
+
+        preview.append("\n合并后原笔记将放入回收站，是否继续？");
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("确认合并");
+        builder.setMessage(preview.toString());
+        builder.setPositiveButton("合并", (dialog, which) -> mergeSelectedNotes());
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
+
+    /**
+     * 获取笔记的时间字符串（用于合并预览）
+     */
+    private String getNoteTimeString(long noteId, long timestamp) {
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+
+        // 尝试获取时间范围
+        Cursor cursor = dbHelper.getTimeRangesForNote(noteId);
+        if (cursor != null && cursor.moveToFirst()) {
+            long startTime = cursor.getLong(cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_START_TIME));
+            long endTime = cursor.getLong(cursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_END_TIME));
+            cursor.close();
+
+            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault());
+            return "[" + dateFormat.format(startTime) + "-" + dateFormat.format(endTime) + "]";
+        }
+        if (cursor != null) {
+            cursor.close();
+        }
+
+        return "[" + sdf.format(timestamp) + "]";
+    }
+
+    /**
+     * 合并选中的笔记（暂未实现）
+     */
+    private void mergeSelectedNotes() {
+        Toast.makeText(this, "合并功能暂未实现", Toast.LENGTH_SHORT).show();
     }
 
     /**
