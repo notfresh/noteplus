@@ -1284,6 +1284,9 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         } else if (id == R.id.action_move_to_project) {
             showMoveToProjectDialog();
             return true;
+        } else if (id == R.id.action_merge_notes) {
+            showMergeConfirmDialog();
+            return true;
         } else if (id == R.id.action_cancel_multi_select) {
             exitMultiSelectMode();
             return true;
