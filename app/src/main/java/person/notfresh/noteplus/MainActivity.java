@@ -1056,6 +1056,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         multiSelectMenuItem = menu.findItem(R.id.action_multi_select);
         MenuItem moveToProjectMenuItem = menu.findItem(R.id.action_move_to_project);
         MenuItem cancelMultiSelectMenuItem = menu.findItem(R.id.action_cancel_multi_select);
+        MenuItem mergeNotesMenuItem = menu.findItem(R.id.action_merge_notes);
         
         // 根据多选模式设置菜单项可见性
         if (isMultiSelectMode) {
@@ -1065,6 +1066,9 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             }
             if (cancelMultiSelectMenuItem != null) {
                 cancelMultiSelectMenuItem.setVisible(true);
+            }
+            if (mergeNotesMenuItem != null) {
+                mergeNotesMenuItem.setVisible(true);
             }
             // 隐藏其他菜单项
             menu.findItem(R.id.action_switch_project).setVisible(false);
@@ -1079,6 +1083,9 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             }
             if (cancelMultiSelectMenuItem != null) {
                 cancelMultiSelectMenuItem.setVisible(false);
+            }
+            if (mergeNotesMenuItem != null) {
+                mergeNotesMenuItem.setVisible(false);
             }
             // 显示其他菜单项
             menu.findItem(R.id.action_switch_project).setVisible(true);
