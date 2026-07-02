@@ -180,6 +180,60 @@ public class ProjectContextManager {
     }
 
     /**
+     * 获取切换历史副本
+     * @return 历史列表副本
+     */
+    public List<String> getSwitchHistory() {
+        return new ArrayList<>(projectSwitchHistory);
+    }
+
+    /**
+     * 添加项目到切换历史（手动切换时调用）
+     * 如果项目已在历史中，先移除再加入最前面；超出3个则移除最老的
+     * @param project 项目名称
+     */
+    public void addToSwitchHistory(String project) {
+        if (project == null || project.isEmpty()) return;
+
+        // 如果已存在，先移除
+        projectSwitchHistory.remove(project);
+
+        // 加入最前面
+        projectSwitchHistory.add(0, project);
+
+        // 超出容量则移除最老的
+        while (projectSwitchHistory.size() > MAX_HISTORY_SIZE) {
+            projectSwitchHistory.remove(projectSwitchHistory.size() - 1);
+        }
+
+        saveHistory();
+    }
+
+    /**
+     * 获取历史中的上一个项目（用于长按切换）
+     * 如果当前项目不在历史中，先加入再获取
+     * @return 上一个项目名称，如果没有则返回 null
+     */
+    public String getPreviousProjectFromHistory() {
+        String current = currentProjectName;
+
+        // 如果当前项目不在历史中，先加入
+        if (!projectSwitchHistory.contains(current)) {
+            addToSwitchHistory(current);
+        }
+
+        // 找到当前项目在历史中的位置
+        int currentIndex = projectSwitchHistory.indexOf(current);
+        if (currentIndex == -1) {
+            return null;
+        }
+
+        // 获取上一个（当前位置-1，循环）
+        int previousIndex = (currentIndex - 1 + projectSwitchHistory.size()) % projectSwitchHistory.size();
+        return projectSwitchHistory.get(previousIndex);
+    }
+
+    /**
      * 获取上一个项目名称
      * @return 上一个项目名称，如果没有则返回 null
      */
