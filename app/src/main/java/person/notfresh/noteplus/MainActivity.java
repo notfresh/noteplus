@@ -1045,7 +1045,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     private void updateTitle() {
         if (getSupportActionBar() != null) {
             String currentProject = projectManager.getCurrentProject();
-            getSupportActionBar().setTitle("时间记录 - " + currentProject);
+            getSupportActionBar().setTitle(currentProject);
         }
     }
     
