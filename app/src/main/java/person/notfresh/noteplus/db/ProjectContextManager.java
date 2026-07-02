@@ -130,10 +130,10 @@ public class ProjectContextManager {
             return false;
         }
         
-        // 在切换前，将当前项目保存为"上一个项目"
+        // 在切换前，将目标项目保存到切换历史
         // 只有在真正切换项目时才记录（不是首次设置，且不是切换到同一个项目）
         if (currentProjectName != null && !currentProjectName.equals(projectName)) {
-            previousProjectName = currentProjectName;
+            addToSwitchHistory(projectName);
         }
         
         // 不立即关闭数据库，仅切换引用
