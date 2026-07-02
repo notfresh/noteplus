@@ -26,7 +26,9 @@ public class ProjectContextManager {
     private static final String KEY_DEFAULT_PROJECT = "default_project";
     private static final String KEY_PROJECT_ORDER = "project_order";
     private static final String ORDER_SEPARATOR = ",";
-    
+    private static final String KEY_PROJECT_SWITCH_HISTORY = "project_switch_history";
+    private static final int MAX_HISTORY_SIZE = 3;
+
     private Context appContext;
     private NoteDbHelper currentDbHelper;
     private String currentProjectName;
@@ -35,8 +37,8 @@ public class ProjectContextManager {
     // 添加缓存属性
     private Map<String, NoteDbHelper> dbHelperCache = new HashMap<>();
     
-    // 上一个项目名称（用于长按返回功能）
-    private String previousProjectName = null;
+    // 项目切换历史列表（用于长按循环切换）
+    private List<String> projectSwitchHistory = new ArrayList<>();
     
     public ProjectContextManager(Context context) {
         this.appContext = context.getApplicationContext();
