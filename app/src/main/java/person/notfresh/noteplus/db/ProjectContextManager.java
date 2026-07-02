@@ -64,6 +64,7 @@ public class ProjectContextManager {
         addProjectToList(currentProjectName);
         
         initializeDbHelper();
+        loadHistory();
     }
 
     /**
@@ -149,7 +150,35 @@ public class ProjectContextManager {
         
         return true;
     }
-    
+
+    /**
+     * 从 SharedPreferences 加载切换历史
+     */
+    private void loadHistory() {
+        String historyStr = preferences.getString(KEY_PROJECT_SWITCH_HISTORY, "");
+        projectSwitchHistory.clear();
+        if (!historyStr.isEmpty()) {
+            String[] parts = historyStr.split(ORDER_SEPARATOR);
+            for (String p : parts) {
+                if (!p.isEmpty()) {
+                    projectSwitchHistory.add(p);
+                }
+            }
+        }
+    }
+
+    /**
+     * 保存切换历史到 SharedPreferences
+     */
+    private void saveHistory() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < projectSwitchHistory.size(); i++) {
+            if (i > 0) sb.append(ORDER_SEPARATOR);
+            sb.append(projectSwitchHistory.get(i));
+        }
+        preferences.edit().putString(KEY_PROJECT_SWITCH_HISTORY, sb.toString()).apply();
+    }
+
     /**
      * 获取上一个项目名称
      * @return 上一个项目名称，如果没有则返回 null
