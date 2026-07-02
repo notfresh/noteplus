@@ -2062,15 +2062,12 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         // 检查上一个项目是否还存在
         List<String> projects = projectManager.getProjectList();
         if (!projects.contains(previousProject)) {
-            Toast.makeText(this, "上一个项目 \"" + previousProject + "\" 已不存在", 
+            Toast.makeText(this, "上一个项目 \"" + previousProject + "\" 已不存在",
                 Toast.LENGTH_SHORT).show();
-            // 清除无效的上一个项目记录
-            projectManager.clearPreviousProject();
             return;
         }
-        
+
         // 切换到上一个项目
-        // 注意：switchProject 内部会更新 previousProjectName
         switchProject(previousProject);
         // 切换成功的提示由 switchProject 方法在异步完成后显示
     }
