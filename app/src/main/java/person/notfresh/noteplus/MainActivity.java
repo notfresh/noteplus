@@ -2027,12 +2027,12 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     private Toast longPressToast;
 
     private void showLongPressHint() {
-        String previousProject = projectManager.getPreviousProject();
+        String previousProject = projectManager.getPreviousProjectFromHistory();
         if (previousProject == null) {
-            longPressToast = Toast.makeText(this, "没有上一个项目", Toast.LENGTH_SHORT);
+            longPressToast = Toast.makeText(this, "没有切换历史", Toast.LENGTH_SHORT);
         } else {
-            longPressToast = Toast.makeText(this, 
-                "长按2秒返回: " + previousProject, 
+            longPressToast = Toast.makeText(this,
+                "长按2秒切换到: " + previousProject,
                 Toast.LENGTH_LONG);
         }
         longPressToast.show();
@@ -2051,7 +2051,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
      * 切换到上一个项目（长按触发）
      */
     private void switchToPreviousProject() {
-        String previousProject = projectManager.getPreviousProject();
+        String previousProject = projectManager.getPreviousProjectFromHistory();
         
         // 如果变量为空，不予理睬
         if (previousProject == null) {
@@ -2072,9 +2072,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         // 切换到上一个项目
         // 注意：switchProject 内部会更新 previousProjectName
         switchProject(previousProject);
-        
-        // 显示提示
-        Toast.makeText(this, "已返回: " + previousProject, Toast.LENGTH_SHORT).show();
+        // 切换成功的提示由 switchProject 方法在异步完成后显示
     }
 
     /**
