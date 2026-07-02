@@ -36,7 +36,7 @@ public class ProjectContextManager {
     
     // 添加缓存属性
     private Map<String, NoteDbHelper> dbHelperCache = new HashMap<>();
-    
+
     // 项目切换历史列表（用于长按循环切换）
     private List<String> projectSwitchHistory = new ArrayList<>();
     
@@ -130,8 +130,6 @@ public class ProjectContextManager {
             return false;
         }
         
-        // 在切换前，将目标项目保存到切换历史
-        // 只有在真正切换项目时才记录（不是首次设置，且不是切换到同一个项目）
         if (currentProjectName != null && !currentProjectName.equals(projectName)) {
             addToSwitchHistory(projectName);
         }
@@ -233,21 +231,7 @@ public class ProjectContextManager {
         return projectSwitchHistory.get(previousIndex);
     }
 
-    /**
-     * 获取上一个项目名称
-     * @return 上一个项目名称，如果没有则返回 null
-     */
-    public String getPreviousProject() {
-        return previousProjectName;
-    }
-    
-    /**
-     * 清除上一个项目记录
-     */
-    public void clearPreviousProject() {
-        previousProjectName = null;
-    }
-    
+        
     /**
      * 获取项目列表（按保存的顺序排序）
      */
@@ -504,12 +488,7 @@ public class ProjectContextManager {
             List<String> orderList = getProjectOrder();
             orderList.remove(projectName);
             saveProjectOrder(orderList);
-            
-            // 3.5. 如果删除的是上一个项目，清除记录
-            if (projectName.equals(previousProjectName)) {
-                previousProjectName = null;
-            }
-            
+
             // 4. 使用额外的安全措施删除数据库文件
             boolean success = true;
             if (dbFile.exists()) {
@@ -647,12 +626,7 @@ public class ProjectContextManager {
             List<String> orderList = getProjectOrder();
             orderList.remove(projectName);
             saveProjectOrder(orderList);
-            
-            // 3.5. 如果删除的是上一个项目，清除记录
-            if (projectName.equals(previousProjectName)) {
-                previousProjectName = null;
-            }
-            
+
             // 4. 添加到回收站列表
             addProjectToRecycleBin(projectName);
             
