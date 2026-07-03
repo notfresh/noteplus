@@ -152,6 +152,8 @@ public class SearchManager {
         }
         this.dbHelper = newDbHelper;
         this.projectName = newProjectName;
+        // 重置索引状态，允许新的索引任务执行
+        isIndexing = false;
         initServices();
         Log.i(TAG, "SearchManager 已切换到新的项目数据库: " + newProjectName);
     }

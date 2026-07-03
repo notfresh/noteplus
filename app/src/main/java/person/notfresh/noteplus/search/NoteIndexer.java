@@ -13,6 +13,7 @@ import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.Term;
+import org.apache.lucene.store.AlreadyClosedException;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.SimpleFSLockFactory;
 import org.wltea.analyzer.lucene.IKAnalyzer;
@@ -105,6 +106,9 @@ public class NoteIndexer implements Closeable {
             }
             Log.d(TAG, "笔记 " + noteId + " 索引构建成功");
             return true;
+        } catch (AlreadyClosedException e) {
+            Log.w(TAG, "索引写入器已关闭，跳过笔记 " + noteId);
+            return false;
         } catch (IOException e) {
             Log.e(TAG, "笔记 " + noteId + " 索引构建失败", e);
             return false;
