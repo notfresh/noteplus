@@ -933,14 +933,17 @@ public class NoteListManager {
         
         // 如果配置显示花费且花费大于0，则在记录旁边显示花费
         boolean showCost = callback != null ? callback.getShowCost() : false;
+        android.util.Log.d("DEBUG", "updateListItemWithExtras: noteId=" + noteId + ", cost=" + cost + ", showCost=" + showCost);
         if (showCost && cost > 0) {
             // 获取内容文本视图
             TextView contentText = view.findViewById(R.id.contentText);
             String currentText = contentText.getText().toString();
-            
+            android.util.Log.d("DEBUG", "updateListItemWithExtras: 添加费用, currentText=" + currentText);
+
             // 在文本后面添加花费信息
             String costText = String.format(" [¥%.2f]", cost);
             contentText.setText(currentText + costText);
+            android.util.Log.d("DEBUG", "updateListItemWithExtras: 添加后=" + contentText.getText().toString());
         }
     }
     
@@ -1529,6 +1532,22 @@ public class NoteListManager {
             showAddCommentDialog(noteId, null);
         });
         actionLayout.addView(addCommentButton);
+
+        // 添加"标签"按钮
+        TextView tagButton = new TextView(context);
+        tagButton.setText("标签");
+        tagButton.setTextColor(0xFF4CAF50); // 绿色，与追加内容按钮区分
+        tagButton.setTextSize(14);
+        LinearLayout.LayoutParams tagButtonParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        tagButtonParams.setMargins(DisplayUtil.dpToPx(context, 16), 0, 0, 0);
+        tagButton.setLayoutParams(tagButtonParams);
+        tagButton.setOnClickListener(v -> {
+            showNoteTagDialog(noteId);
+        });
+        actionLayout.addView(tagButton);
+
         commentsContainer.addView(actionLayout);
 
         int commentCount = dbHelper.getCommentCount(noteId);
@@ -2194,7 +2213,7 @@ public class NoteListManager {
         
         // 检查当前置顶状态
         boolean isPinned = dbHelper.isNotePinned(noteId);
-        String[] options = {"复制到剪切板", "编辑", "追加内容", isPinned ? "取消置顶" : "置顶", "合并到...", "移动到...", "归档", "删除"};
+        String[] options = {"复制到剪切板", "编辑", "追加内容", isPinned ? "取消置顶" : "置顶", "转为评论", "移动到...", "归档", "删除"};
         
         builder.setItems(options, (dialog, which) -> {
             switch (which) {
