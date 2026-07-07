@@ -2885,42 +2885,57 @@ public class NoteListManager {
                 @SuppressLint("Range") String tagColor = currentTagsCursor.getString(currentTagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_COLOR));
                 currentTagIds.add(tagId);
 
-                // 创建标签视图（带删除按钮）
+                // 创建标签视图（颜色方块 + 标签名 + 删除按钮），与新建笔记时一致
                 LinearLayout tagLayout = new LinearLayout(context);
                 tagLayout.setOrientation(LinearLayout.HORIZONTAL);
-                tagLayout.setGravity(android.view.Gravity.CENTER_VERTICAL);
+                tagLayout.setGravity(Gravity.CENTER_VERTICAL);
+                tagLayout.setPadding(DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8));
 
-                TextView tagView = new TextView(context);
-                tagView.setText(tagName);
-                tagView.setPadding(DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 4), DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 4));
-                tagView.setTextColor(Color.WHITE);
-                tagView.setTextSize(12);
+                // 颜色方块
+                View colorView = new View(context);
+                int colorSize = DisplayUtil.dpToPx(context, 24);
+                LinearLayout.LayoutParams colorParams = new LinearLayout.LayoutParams(colorSize, colorSize);
+                colorView.setLayoutParams(colorParams);
                 try {
-                    tagView.setBackgroundColor(Color.parseColor(tagColor));
+                    colorView.setBackgroundColor(Color.parseColor(tagColor));
                 } catch (Exception e) {
-                    tagView.setBackgroundColor(Color.GRAY);
+                    colorView.setBackgroundColor(Color.GRAY);
                 }
 
+                // 标签名
+                TextView tagText = new TextView(context);
+                tagText.setText(tagName);
+                tagText.setTextSize(16);
+                LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                textParams.setMargins(DisplayUtil.dpToPx(context, 8), 0, 0, 0);
+                tagText.setLayoutParams(textParams);
+
+                // 删除按钮（用 × 表示）
                 TextView removeBtn = new TextView(context);
-                removeBtn.setText(" ×");
+                removeBtn.setText("✕");
+                removeBtn.setTextSize(14);
                 removeBtn.setTextColor(Color.RED);
-                removeBtn.setTextSize(16);
+                LinearLayout.LayoutParams removeParams = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                removeParams.setMargins(DisplayUtil.dpToPx(context, 16), 0, 0, 0);
+                removeBtn.setLayoutParams(removeParams);
                 removeBtn.setOnClickListener(v -> {
                     dbHelper.unlinkNoteFromTag(noteId, tagId);
                     refreshNoteView(noteId);
-                    // 刷新对话框
                     builder.create().dismiss();
                     showNoteTagDialog(noteId);
                 });
 
-                tagLayout.addView(tagView);
+                tagLayout.addView(colorView);
+                tagLayout.addView(tagText);
                 tagLayout.addView(removeBtn);
 
-                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT);
-                params.setMargins(0, 0, DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8));
-                tagLayout.setLayoutParams(params);
+                // 设置整个条目可点击（点击删除）
+                tagLayout.setClickable(true);
+                tagLayout.setOnClickListener(v -> removeBtn.performClick());
 
                 currentTagsContainer.addView(tagLayout);
             }
@@ -2939,45 +2954,63 @@ public class NoteListManager {
                 @SuppressLint("Range") String tagName = allTagsCursor.getString(allTagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_NAME));
                 @SuppressLint("Range") String tagColor = allTagsCursor.getString(allTagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_COLOR));
 
-                TextView tagView = new TextView(context);
-                tagView.setText("+ " + tagName);
-                tagView.setPadding(DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 4), DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 4));
+                // 创建标签视图（颜色方块 + 标签名），与新建笔记时一致
+                LinearLayout tagLayout = new LinearLayout(context);
+                tagLayout.setOrientation(LinearLayout.HORIZONTAL);
+                tagLayout.setGravity(Gravity.CENTER_VERTICAL);
+                tagLayout.setPadding(DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8));
+                tagLayout.setClickable(true);
+
+                // 颜色方块
+                View colorView = new View(context);
+                int colorSize = DisplayUtil.dpToPx(context, 24);
+                LinearLayout.LayoutParams colorParams = new LinearLayout.LayoutParams(colorSize, colorSize);
+                colorView.setLayoutParams(colorParams);
                 try {
-                    tagView.setTextColor(Color.parseColor(tagColor));
+                    colorView.setBackgroundColor(Color.parseColor(tagColor));
                 } catch (Exception e) {
-                    tagView.setTextColor(Color.GRAY);
+                    colorView.setBackgroundColor(Color.GRAY);
                 }
-                tagView.setTextSize(12);
-                tagView.setBackgroundResource(android.R.drawable.edit_text);
-                tagView.setOnClickListener(v -> {
+
+                // 标签名
+                TextView tagText = new TextView(context);
+                tagText.setText(tagName);
+                tagText.setTextSize(16);
+                LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                textParams.setMargins(DisplayUtil.dpToPx(context, 8), 0, 0, 0);
+                tagText.setLayoutParams(textParams);
+
+                tagLayout.addView(colorView);
+                tagLayout.addView(tagText);
+
+                tagLayout.setOnClickListener(v -> {
                     dbHelper.linkNoteToTag(noteId, tagId);
                     refreshNoteView(noteId);
-                    // 刷新对话框
                     builder.create().dismiss();
                     showNoteTagDialog(noteId);
                 });
 
-                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT);
-                params.setMargins(0, 0, DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8));
-                tagView.setLayoutParams(params);
-
-                allTagsContainer.addView(tagView);
+                allTagsContainer.addView(tagLayout);
             }
             allTagsCursor.close();
         }
 
-        // 创建按钮点击事件
+        // 创建按钮点击事件（使用随机颜色，与新建笔记时一致）
         buttonCreateTag.setOnClickListener(v -> {
             String newTagName = editNewTagName.getText().toString().trim();
             if (!newTagName.isEmpty()) {
-                long newTagId = dbHelper.addTag(newTagName, "#2196F3");
+                String[] colors = {"#FF5722", "#9C27B0", "#2196F3", "#4CAF50", "#FFC107", "#607D8B"};
+                String randomColor = colors[new java.util.Random().nextInt(colors.length)];
+                long newTagId = dbHelper.addTag(newTagName, randomColor);
                 if (newTagId > 0) {
                     dbHelper.linkNoteToTag(noteId, newTagId);
                     refreshNoteView(noteId);
                     builder.create().dismiss();
                     showNoteTagDialog(noteId);
+                } else {
+                    Toast.makeText(context, "创建标签失败，可能已存在同名标签", Toast.LENGTH_SHORT).show();
                 }
             }
         });
