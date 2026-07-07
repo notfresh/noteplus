@@ -2874,9 +2874,9 @@ public class NoteListManager {
         builder.setView(dialogView);
         builder.setTitle("编辑标签");
 
-        // 获取容器
-        LinearLayout currentTagsContainer = dialogView.findViewById(R.id.currentTagsContainer);
-        LinearLayout allTagsContainer = dialogView.findViewById(R.id.allTagsContainer);
+        // 获取容器（现在是 FlexboxLayout）
+        FlexboxLayout currentTagsContainer = dialogView.findViewById(R.id.currentTagsContainer);
+        FlexboxLayout allTagsContainer = dialogView.findViewById(R.id.allTagsContainer);
         EditText editNewTagName = dialogView.findViewById(R.id.editNewTagName);
         Button buttonCreateTag = dialogView.findViewById(R.id.buttonCreateTag);
 
