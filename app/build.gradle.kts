@@ -44,6 +44,7 @@ dependencies {
     implementation(libs.navigation.ui)
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.work:work-runtime:2.8.1")
+    implementation("com.google.android.flexbox:flexbox:3.0.0")
 
     // Lucene 核心（9.x 在 Android 上会触发 Runtime.version()，固定到 8.5.0）
     implementation("org.apache.lucene:lucene-core:8.5.0")

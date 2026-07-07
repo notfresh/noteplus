@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:flexbox="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
@@ -14,11 +15,13 @@
         android:textSize="14sp"
         android:layout_marginBottom="8dp" />
 
-    <LinearLayout
+    <com.google.android.flexbox.FlexboxLayout
         android:id="@+id/currentTagsContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
+        flexbox:flexWrap="wrap"
+        flexbox:alignItems="flex_start"
+        flexbox:flexDirection="row"
         android:layout_marginBottom="16dp" />
 
     <!-- 分隔线 -->
@@ -37,11 +40,13 @@
         android:textSize="14sp"
         android:layout_marginBottom="8dp" />
 
-    <LinearLayout
+    <com.google.android.flexbox.FlexboxLayout
         android:id="@+id/allTagsContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
+        flexbox:flexWrap="wrap"
+        flexbox:alignItems="flex_start"
+        flexbox:flexDirection="row"
         android:layout_marginBottom="16dp" />
 
     <!-- 创建新标签区域 -->

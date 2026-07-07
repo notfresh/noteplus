@@ -32,6 +32,7 @@ import android.view.WindowManager;
 import android.widget.Button;
 import androidx.core.content.FileProvider;
 import androidx.fragment.app.FragmentActivity;
+import com.google.android.flexbox.FlexboxLayout;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -999,58 +1000,62 @@ public class NoteListManager {
         if (callback == null) {
             return;
         }
-        
+
         NoteDbHelper dbHelper = callback.getDbHelper();
         Context context = callback.getContext();
         if (dbHelper == null || context == null) {
             return;
         }
-        
+
         Cursor tagsCursor = dbHelper.getTagsForNote(noteId);
-        
+
         if (tagsCursor != null && tagsCursor.getCount() > 0) {
             LinearLayout tagLayout = new LinearLayout(context);
             tagLayout.setOrientation(LinearLayout.HORIZONTAL);
             int padding = DisplayUtil.dpToPx(context, 4);
             tagLayout.setPadding(padding, padding, padding, padding);
-            
+
             TextView tagsLabel = new TextView(context);
             tagsLabel.setText("标签: ");
             tagsLabel.setTypeface(null, android.graphics.Typeface.BOLD);
             tagLayout.addView(tagsLabel);
-            
-            LinearLayout tagsContainer = new LinearLayout(context);
-            tagsContainer.setOrientation(LinearLayout.HORIZONTAL);
-            
+
+            // 使用 FlexboxLayout 实现自动换行
+            FlexboxLayout tagsContainer = new FlexboxLayout(context);
+            tagsContainer.setFlexWrap(com.google.android.flexbox.FlexWrap.WRAP);
+            tagsContainer.setAlignItems(com.google.android.flexbox.AlignItems.CENTER);
+            tagsContainer.setFlexDirection(com.google.android.flexbox.FlexDirection.ROW);
+
             while (tagsCursor.moveToNext()) {
                 @SuppressLint("Range") String tagName = tagsCursor.getString(tagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_NAME));
                 @SuppressLint("Range") String tagColor = tagsCursor.getString(tagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_COLOR));
-                
+
                 TextView tagView = new TextView(context);
                 tagView.setText(tagName);
                 int tagPadding = DisplayUtil.dpToPx(context, 4);
                 int tagPaddingTop = DisplayUtil.dpToPx(context, 2);
                 tagView.setPadding(tagPadding, tagPaddingTop, tagPadding, tagPaddingTop);
                 tagView.setTextColor(Color.WHITE);
-                
+
                 try {
                     tagView.setBackgroundColor(Color.parseColor(tagColor));
                 } catch (Exception e) {
                     tagView.setBackgroundColor(Color.GRAY);
                 }
-                
-                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT);
-                params.setMargins(DisplayUtil.dpToPx(context, 4), 0, 0, 0);
+
+                FlexboxLayout.LayoutParams params = new FlexboxLayout.LayoutParams(
+                        FlexboxLayout.LayoutParams.WRAP_CONTENT,
+                        FlexboxLayout.LayoutParams.WRAP_CONTENT);
+                params.setFlexShrink(0);
+                params.setMargins(DisplayUtil.dpToPx(context, 4), 0, DisplayUtil.dpToPx(context, 4), DisplayUtil.dpToPx(context, 4));
                 tagView.setLayoutParams(params);
-                
+
                 tagsContainer.addView(tagView);
             }
-            
+
             tagLayout.addView(tagsContainer);
             container.addView(tagLayout);
-            
+
             tagsCursor.close();
         }
     }
@@ -2937,6 +2942,14 @@ public class NoteListManager {
                 tagLayout.setClickable(true);
                 tagLayout.setOnClickListener(v -> removeBtn.performClick());
 
+                // 添加到 FlexboxLayout 时使用 FlexboxLayout.LayoutParams
+                FlexboxLayout.LayoutParams layoutParams = new FlexboxLayout.LayoutParams(
+                        FlexboxLayout.LayoutParams.WRAP_CONTENT,
+                        FlexboxLayout.LayoutParams.WRAP_CONTENT);
+                layoutParams.setFlexShrink(0);
+                layoutParams.setMargins(0, 0, DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8));
+                tagLayout.setLayoutParams(layoutParams);
+
                 currentTagsContainer.addView(tagLayout);
             }
             currentTagsCursor.close();
@@ -2991,6 +3004,14 @@ public class NoteListManager {
                     builder.create().dismiss();
                     showNoteTagDialog(noteId);
                 });
+
+                // 添加到 FlexboxLayout 时使用 FlexboxLayout.LayoutParams
+                FlexboxLayout.LayoutParams layoutParams = new FlexboxLayout.LayoutParams(
+                        FlexboxLayout.LayoutParams.WRAP_CONTENT,
+                        FlexboxLayout.LayoutParams.WRAP_CONTENT);
+                layoutParams.setFlexShrink(0);
+                layoutParams.setMargins(0, 0, DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8));
+                tagLayout.setLayoutParams(layoutParams);
 
                 allTagsContainer.addView(tagLayout);
             }
