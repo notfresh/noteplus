@@ -2880,7 +2880,7 @@ public class NoteListManager {
         List<Long> currentTagIds = new ArrayList<>();
         if (currentTagsCursor != null && currentTagsCursor.getCount() > 0) {
             while (currentTagsCursor.moveToNext()) {
-                @SuppressLint("Range") long tagId = currentTagsCursor.getLong(currentTagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_ID));
+                @SuppressLint("Range") long tagId = currentTagsCursor.getLong(currentTagsCursor.getColumnIndex("_id"));
                 @SuppressLint("Range") String tagName = currentTagsCursor.getString(currentTagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_NAME));
                 @SuppressLint("Range") String tagColor = currentTagsCursor.getString(currentTagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_COLOR));
                 currentTagIds.add(tagId);
@@ -2931,7 +2931,7 @@ public class NoteListManager {
         Cursor allTagsCursor = dbHelper.getAllTags();
         if (allTagsCursor != null && allTagsCursor.getCount() > 0) {
             while (allTagsCursor.moveToNext()) {
-                @SuppressLint("Range") long tagId = allTagsCursor.getLong(allTagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_ID));
+                @SuppressLint("Range") long tagId = allTagsCursor.getLong(allTagsCursor.getColumnIndex("_id"));
                 // 跳过已添加的标签
                 if (currentTagIds.contains(tagId)) {
                     continue;
