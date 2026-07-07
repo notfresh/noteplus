@@ -2938,10 +2938,6 @@ public class NoteListManager {
                 tagLayout.addView(tagText);
                 tagLayout.addView(removeBtn);
 
-                // 设置整个条目可点击（点击删除）
-                tagLayout.setClickable(true);
-                tagLayout.setOnClickListener(v -> removeBtn.performClick());
-
                 // 添加到 FlexboxLayout 时使用 FlexboxLayout.LayoutParams
                 FlexboxLayout.LayoutParams layoutParams = new FlexboxLayout.LayoutParams(
                         FlexboxLayout.LayoutParams.WRAP_CONTENT,
