@@ -2942,7 +2942,11 @@ public class NoteListManager {
                 TextView tagView = new TextView(context);
                 tagView.setText("+ " + tagName);
                 tagView.setPadding(DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 4), DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 4));
-                tagView.setTextColor(tagColor);
+                try {
+                    tagView.setTextColor(Color.parseColor(tagColor));
+                } catch (Exception e) {
+                    tagView.setTextColor(Color.GRAY);
+                }
                 tagView.setTextSize(12);
                 tagView.setBackgroundResource(android.R.drawable.edit_text);
                 tagView.setOnClickListener(v -> {

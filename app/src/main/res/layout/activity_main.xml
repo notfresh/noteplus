@@ -124,30 +124,31 @@
 				android:text="点击选择" />
 		</LinearLayout>
 
-		<!-- 花费输入布局，放在时间区间布局后面 -->
-		<LinearLayout
-			android:id="@+id/costContainer"
-			android:layout_width="match_parent"
+	</LinearLayout>
+
+	<!-- 花费输入布局（独立容器，不受时间区间隐藏影响） -->
+	<LinearLayout
+		android:id="@+id/costContainer"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:orientation="horizontal"
+		android:padding="8dp">
+
+		<TextView
+			android:layout_width="wrap_content"
 			android:layout_height="wrap_content"
-			android:orientation="horizontal"
-			android:padding="8dp">
+			android:text="花费: " />
 
-			<TextView
-				android:layout_width="wrap_content"
-				android:layout_height="wrap_content"
-				android:text="花费: " />
+		<EditText
+			android:id="@+id/costEditText"
+			android:layout_width="0dp"
+			android:layout_height="wrap_content"
+			android:layout_weight="1"
+			android:hint="0.00"
+			android:inputType="numberDecimal"
+			android:background="@drawable/simple_background"
+			android:padding="8dp" />
 
-			<EditText
-				android:id="@+id/costEditText"
-				android:layout_width="0dp"
-				android:layout_height="wrap_content"
-				android:layout_weight="1"
-				android:hint="0.00"
-				android:inputType="numberDecimal"
-				android:background="@drawable/simple_background"
-				android:padding="8dp" />
-
-		</LinearLayout>
 	</LinearLayout>
 
 	<!-- 标签布局 -->

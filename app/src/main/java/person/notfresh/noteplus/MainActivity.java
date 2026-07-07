@@ -1192,15 +1192,15 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             momentsListView.setVisibility(View.VISIBLE);
         }
 
-        // 恢复添加笔记相关组件显示
+        // 恢复添加笔记相关组件显示（根据用户设置恢复可见性）
         if (inputContainer != null) {
             inputContainer.setVisibility(View.VISIBLE);
         }
         if (timeRangeContainer != null) {
-            timeRangeContainer.setVisibility(View.VISIBLE);
+            timeRangeContainer.setVisibility(showTimeRange ? View.VISIBLE : View.GONE);
         }
         if (costContainer != null) {
-            costContainer.setVisibility(View.VISIBLE);
+            costContainer.setVisibility(showCost ? View.VISIBLE : View.GONE);
         }
         if (tagContainer != null) {
             tagContainer.setVisibility(View.VISIBLE);

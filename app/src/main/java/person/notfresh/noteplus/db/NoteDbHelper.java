@@ -488,8 +488,15 @@ public class NoteDbHelper extends SQLiteOpenHelper {
         ContentValues values = new ContentValues();
         values.put(COLUMN_RECORD_ID, noteId);
         values.put(COLUMN_TAG_ID, tagId);
-        
+
         return db.insert(TABLE_NOTE_TAGS, null, values);
+    }
+
+    public int unlinkNoteFromTag(long noteId, long tagId) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        return db.delete(TABLE_NOTE_TAGS,
+                COLUMN_RECORD_ID + " = ? AND " + COLUMN_TAG_ID + " = ?",
+                new String[]{String.valueOf(noteId), String.valueOf(tagId)});
     }
 
     public long saveTimeRange(long noteId, long startTime, long endTime) {
