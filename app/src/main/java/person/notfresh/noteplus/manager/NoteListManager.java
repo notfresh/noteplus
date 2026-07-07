@@ -2848,5 +2848,138 @@ public class NoteListManager {
             return convertView;
         }
     }
+
+    /**
+     * 显示笔记标签编辑对话框
+     * @param noteId 笔记ID
+     */
+    public void showNoteTagDialog(long noteId) {
+        if (callback == null) {
+            return;
+        }
+
+        NoteDbHelper dbHelper = callback.getDbHelper();
+        Context context = callback.getContext();
+        if (dbHelper == null || context == null) {
+            return;
+        }
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(context);
+        View dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_note_tag_edit, null);
+        builder.setView(dialogView);
+        builder.setTitle("编辑标签");
+
+        // 获取容器
+        LinearLayout currentTagsContainer = dialogView.findViewById(R.id.currentTagsContainer);
+        LinearLayout allTagsContainer = dialogView.findViewById(R.id.allTagsContainer);
+        EditText editNewTagName = dialogView.findViewById(R.id.editNewTagName);
+        Button buttonCreateTag = dialogView.findViewById(R.id.buttonCreateTag);
+
+        // 加载当前笔记的标签
+        Cursor currentTagsCursor = dbHelper.getTagsForNote(noteId);
+        List<Long> currentTagIds = new ArrayList<>();
+        if (currentTagsCursor != null && currentTagsCursor.getCount() > 0) {
+            while (currentTagsCursor.moveToNext()) {
+                @SuppressLint("Range") long tagId = currentTagsCursor.getLong(currentTagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_ID));
+                @SuppressLint("Range") String tagName = currentTagsCursor.getString(currentTagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_NAME));
+                @SuppressLint("Range") String tagColor = currentTagsCursor.getString(currentTagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_COLOR));
+                currentTagIds.add(tagId);
+
+                // 创建标签视图（带删除按钮）
+                LinearLayout tagLayout = new LinearLayout(context);
+                tagLayout.setOrientation(LinearLayout.HORIZONTAL);
+                tagLayout.setGravity(android.view.Gravity.CENTER_VERTICAL);
+
+                TextView tagView = new TextView(context);
+                tagView.setText(tagName);
+                tagView.setPadding(DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 4), DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 4));
+                tagView.setTextColor(Color.WHITE);
+                tagView.setTextSize(12);
+                try {
+                    tagView.setBackgroundColor(Color.parseColor(tagColor));
+                } catch (Exception e) {
+                    tagView.setBackgroundColor(Color.GRAY);
+                }
+
+                TextView removeBtn = new TextView(context);
+                removeBtn.setText(" ×");
+                removeBtn.setTextColor(Color.RED);
+                removeBtn.setTextSize(16);
+                removeBtn.setOnClickListener(v -> {
+                    dbHelper.unlinkNoteFromTag(noteId, tagId);
+                    refreshNoteView(noteId);
+                    // 刷新对话框
+                    builder.create().dismiss();
+                    showNoteTagDialog(noteId);
+                });
+
+                tagLayout.addView(tagView);
+                tagLayout.addView(removeBtn);
+
+                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                params.setMargins(0, 0, DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8));
+                tagLayout.setLayoutParams(params);
+
+                currentTagsContainer.addView(tagLayout);
+            }
+            currentTagsCursor.close();
+        }
+
+        // 加载所有可用标签（排除已添加的）
+        Cursor allTagsCursor = dbHelper.getAllTags();
+        if (allTagsCursor != null && allTagsCursor.getCount() > 0) {
+            while (allTagsCursor.moveToNext()) {
+                @SuppressLint("Range") long tagId = allTagsCursor.getLong(allTagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_ID));
+                // 跳过已添加的标签
+                if (currentTagIds.contains(tagId)) {
+                    continue;
+                }
+                @SuppressLint("Range") String tagName = allTagsCursor.getString(allTagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_NAME));
+                @SuppressLint("Range") String tagColor = allTagsCursor.getString(allTagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_COLOR));
+
+                TextView tagView = new TextView(context);
+                tagView.setText("+ " + tagName);
+                tagView.setPadding(DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 4), DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 4));
+                tagView.setTextColor(tagColor);
+                tagView.setTextSize(12);
+                tagView.setBackgroundResource(android.R.drawable.edit_text);
+                tagView.setOnClickListener(v -> {
+                    dbHelper.linkNoteToTag(noteId, tagId);
+                    refreshNoteView(noteId);
+                    // 刷新对话框
+                    builder.create().dismiss();
+                    showNoteTagDialog(noteId);
+                });
+
+                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT);
+                params.setMargins(0, 0, DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8));
+                tagView.setLayoutParams(params);
+
+                allTagsContainer.addView(tagView);
+            }
+            allTagsCursor.close();
+        }
+
+        // 创建按钮点击事件
+        buttonCreateTag.setOnClickListener(v -> {
+            String newTagName = editNewTagName.getText().toString().trim();
+            if (!newTagName.isEmpty()) {
+                long newTagId = dbHelper.addTag(newTagName, "#2196F3");
+                if (newTagId > 0) {
+                    dbHelper.linkNoteToTag(noteId, newTagId);
+                    refreshNoteView(noteId);
+                    builder.create().dismiss();
+                    showNoteTagDialog(noteId);
+                }
+            }
+        });
+
+        builder.setNegativeButton("关闭", null);
+        builder.show();
+    }
 }
 
