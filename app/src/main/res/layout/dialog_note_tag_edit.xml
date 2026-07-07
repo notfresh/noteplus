@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <!-- 当前笔记标签区域 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="当前标签"
+        android:textStyle="bold"
+        android:textSize="14sp"
+        android:layout_marginBottom="8dp" />
+
+    <LinearLayout
+        android:id="@+id/currentTagsContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="16dp" />
+
+    <!-- 分隔线 -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#E0E0E0"
+        android:layout_marginBottom="16dp" />
+
+    <!-- 添加标签区域 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="添加标签"
+        android:textStyle="bold"
+        android:textSize="14sp"
+        android:layout_marginBottom="8dp" />
+
+    <LinearLayout
+        android:id="@+id/allTagsContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginBottom="16dp" />
+
+    <!-- 创建新标签区域 -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#E0E0E0"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="创建新标签"
+        android:textStyle="bold"
+        android:textSize="14sp"
+        android:layout_marginBottom="8dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <EditText
+            android:id="@+id/editNewTagName"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="标签名称"
+            android:inputType="text"
+            android:layout_marginEnd="8dp" />
+
+        <Button
+            android:id="@+id/buttonCreateTag"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="创建" />
+
+    </LinearLayout>
+
+</LinearLayout>
