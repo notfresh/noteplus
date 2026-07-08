@@ -68,6 +68,7 @@ import android.widget.Spinner;
 import android.widget.ArrayAdapter;
 import android.widget.AdapterView;
 import android.widget.HorizontalScrollView;
+import com.google.android.flexbox.FlexboxLayout;
 import android.media.MediaRecorder;
 import android.media.MediaPlayer;
 import android.media.MediaMetadataRetriever;
@@ -557,102 +558,223 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
 
     /**
      * 显示标签选择对话框
+     * 复用编辑标签的样式和逻辑
      */
     private void showTagSelectionDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        View dialogView = getLayoutInflater().inflate(R.layout.dialog_tag_selection, null);
+        View dialogView = getLayoutInflater().inflate(R.layout.dialog_note_tag_edit, null);
         builder.setView(dialogView);
-        
+
         // 获取视图组件
-        final ListView listViewTags = dialogView.findViewById(R.id.listViewTags);
-        final EditText editTextNewTag = dialogView.findViewById(R.id.editTextNewTag);
+        FlexboxLayout currentTagsContainer = dialogView.findViewById(R.id.currentTagsContainer);
+        FlexboxLayout allTagsContainer = dialogView.findViewById(R.id.allTagsContainer);
+        EditText editNewTagName = dialogView.findViewById(R.id.editNewTagName);
         Button buttonCreateTag = dialogView.findViewById(R.id.buttonCreateTag);
-        
+        TextView buttonCloseDialog = dialogView.findViewById(R.id.buttonCloseDialog);
+
         // 创建对话框并存储在成员变量中
         tagSelectionDialog = builder.create();
-        
+
+        // 右上角关闭按钮
+        buttonCloseDialog.setOnClickListener(v -> tagSelectionDialog.dismiss());
+
         // 获取所有标签
-        final Cursor tagsCursor = dbHelper.getAllTags();
-        
-        // 简化适配器代码，避免使用bindView
-        final SimpleCursorAdapter tagAdapter = new SimpleCursorAdapter(
-                this, 
-                R.layout.tag_list_item, 
-                tagsCursor,
-                new String[]{NoteDbHelper.COLUMN_TAG_NAME},
-                new int[]{R.id.tagNameText},
-                0);
-        
-        // 使用单独的ViewBinder来处理颜色视图
-        tagAdapter.setViewBinder((view, cursor, columnIndex) -> {
-            // 只处理tagNameText的绑定，颜色视图单独处理
-            if (view.getId() == R.id.tagNameText) {
-                String tagName = cursor.getString(columnIndex);
-                ((TextView) view).setText(tagName);
-                return true;
-            }
-            return false;
-        });
-        
-        // 设置适配器
-        listViewTags.setAdapter(tagAdapter);
-        
-        // 在适配器设置后，遍历所有列表项单独设置颜色
-        listViewTags.post(() -> {
-            for (int i = 0; i < tagAdapter.getCount(); i++) {
-                View itemView = tagAdapter.getView(i, null, listViewTags);
-                if (itemView != null) {
-                    View colorView = itemView.findViewById(R.id.tagColorView);
-                    if (colorView != null) {
-                        tagsCursor.moveToPosition(i);
-                        String colorCode = tagsCursor.getString(tagsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TAG_COLOR));
-                        try {
-                            colorView.setBackgroundColor(Color.parseColor(colorCode));
-                        } catch (Exception e) {
-                            colorView.setBackgroundColor(Color.GRAY);
-                        }
-                    }
+        Cursor allTagsCursor = dbHelper.getAllTags();
+
+        // 已选中的标签ID集合
+        Set<Long> selectedTagIds = new HashSet<>();
+        for (Tag t : selectedTags) {
+            selectedTagIds.add(t.getId());
+        }
+
+        // 填充当前已选中的标签（当前标签区）
+        for (Tag tag : selectedTags) {
+            addTagToCurrentSection(tag, currentTagsContainer, allTagsContainer, selectedTagIds);
+        }
+
+        // 填充可添加的标签（添加标签区）- 排除已选中的
+        if (allTagsCursor != null && allTagsCursor.getCount() > 0) {
+            while (allTagsCursor.moveToNext()) {
+                @SuppressLint("Range") long tagId = allTagsCursor.getLong(allTagsCursor.getColumnIndex("_id"));
+                if (selectedTagIds.contains(tagId)) {
+                    continue; // 跳过已选中的
                 }
+                @SuppressLint("Range") String tagName = allTagsCursor.getString(allTagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_NAME));
+                @SuppressLint("Range") String tagColor = allTagsCursor.getString(allTagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_COLOR));
+
+                addTagToAvailableSection(tagId, tagName, tagColor, allTagsContainer, currentTagsContainer, selectedTagIds);
             }
-        });
-        
-        // 设置标签点击事件
-        listViewTags.setOnItemClickListener((parent, view, position, id) -> {
-            tagsCursor.moveToPosition(position);
-            long tagId = tagsCursor.getLong(tagsCursor.getColumnIndexOrThrow("_id"));
-            String tagName = tagsCursor.getString(tagsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TAG_NAME));
-            @SuppressLint("Range") String tagColor = tagsCursor.getString(tagsCursor.getColumnIndex(NoteDbHelper.COLUMN_TAG_COLOR));
-            
-            Tag tag = new Tag(tagId, tagName, tagColor);
-            addTagChip(tag);
-            tagSelectionDialog.dismiss();
-        });
-        
-        // 处理创建新标签的事件
+            allTagsCursor.close();
+        }
+
+        // 创建新标签按钮
         buttonCreateTag.setOnClickListener(v -> {
-            String tagName = editTextNewTag.getText().toString().trim();
-            if (!tagName.isEmpty()) {
-                // 生成随机标签颜色
+            String newTagName = editNewTagName.getText().toString().trim();
+            if (!newTagName.isEmpty()) {
                 String[] colors = {"#FF5722", "#9C27B0", "#2196F3", "#4CAF50", "#FFC107", "#607D8B"};
                 String randomColor = colors[new Random().nextInt(colors.length)];
-                
-                // 添加到数据库
-                long tagId = dbHelper.addTag(tagName, randomColor);
-                
-                if (tagId != -1) {
-                    Tag newTag = new Tag(tagId, tagName, randomColor);
+
+                long newTagId = dbHelper.addTag(newTagName, randomColor);
+                if (newTagId > 0) {
+                    Tag newTag = new Tag(newTagId, newTagName, randomColor);
+                    selectedTags.add(newTag);
+                    // 更新主界面的 Chip 组
                     addTagChip(newTag);
-                    tagSelectionDialog.dismiss();
+                    addTagToCurrentSection(newTag, currentTagsContainer, allTagsContainer, selectedTagIds);
+                    editNewTagName.setText("");
+                    currentTagsContainer.requestLayout();
+                    currentTagsContainer.refreshDrawableState();
                 } else {
                     Toast.makeText(this, "创建标签失败，可能已存在同名标签", Toast.LENGTH_SHORT).show();
                 }
-            } else {
-                Toast.makeText(this, "请输入标签名称", Toast.LENGTH_SHORT).show();
             }
         });
-        
+
         // 显示对话框
         tagSelectionDialog.show();
+    }
+
+    /**
+     * 添加标签到"当前标签"区域（可移除）
+     */
+    private void addTagToCurrentSection(Tag tag, FlexboxLayout currentContainer, FlexboxLayout allTagsContainer, Set<Long> selectedTagIds) {
+        LinearLayout tagLayout = createTagView(tag.getId(), tag.getName(), tag.getColor(), true);
+
+        // × 按钮点击：从已选中移除，移回可添加区
+        TextView removeBtn = (TextView) tagLayout.getChildAt(2);
+        removeBtn.setOnClickListener(v -> {
+            selectedTags.remove(tag);
+            selectedTagIds.remove(tag.getId());
+
+            // 从主界面的 Chip 组中移除对应的 Chip
+            for (int i = 0; i < tagChipGroup.getChildCount(); i++) {
+                View child = tagChipGroup.getChildAt(i);
+                if (child instanceof Chip) {
+                    Chip chip = (Chip) child;
+                    // 通过文本匹配找到对应的 Chip
+                    if (chip.getText().toString().equals(tag.getName())) {
+                        tagChipGroup.removeViewAt(i);
+                        break;
+                    }
+                }
+            }
+
+            // 查找并移除当前视图
+            for (int i = 0; i < currentContainer.getChildCount(); i++) {
+                if (currentContainer.getChildAt(i) == tagLayout) {
+                    currentContainer.removeViewAt(i);
+                    break;
+                }
+            }
+
+            // 添加回可添加区
+            addTagToAvailableSection(tag.getId(), tag.getName(), tag.getColor(),
+                    allTagsContainer, currentContainer, selectedTagIds);
+
+            currentContainer.requestLayout();
+        });
+
+        FlexboxLayout.LayoutParams params = new FlexboxLayout.LayoutParams(
+                FlexboxLayout.LayoutParams.WRAP_CONTENT,
+                FlexboxLayout.LayoutParams.WRAP_CONTENT);
+        params.setFlexShrink(0);
+        params.setMargins(0, 0, DisplayUtil.dpToPx(this, 8), DisplayUtil.dpToPx(this, 8));
+        tagLayout.setLayoutParams(params);
+
+        currentContainer.addView(tagLayout);
+        currentContainer.requestLayout();
+    }
+
+    /**
+     * 添加标签到"可添加标签"区域（点击添加）
+     */
+    private void addTagToAvailableSection(long tagId, String tagName, String tagColor,
+                                          FlexboxLayout availableContainer, FlexboxLayout currentContainer, Set<Long> selectedTagIds) {
+        LinearLayout tagLayout = createTagView(tagId, tagName, tagColor, false);
+
+        // 点击标签：添加到已选中，移入当前区
+        tagLayout.setOnClickListener(v -> {
+            // 创建新的标签对象
+            Tag selectedTag = new Tag(tagId, tagName, tagColor);
+            selectedTags.add(selectedTag);
+            selectedTagIds.add(tagId);
+
+            // 更新主界面的 Chip 组
+            addTagChip(selectedTag);
+
+            // 从可添加区移除
+            for (int i = 0; i < availableContainer.getChildCount(); i++) {
+                if (availableContainer.getChildAt(i) == tagLayout) {
+                    availableContainer.removeViewAt(i);
+                    break;
+                }
+            }
+
+            // 添加到当前区
+            addTagToCurrentSection(selectedTag, currentContainer, availableContainer, selectedTagIds);
+
+            availableContainer.requestLayout();
+        });
+
+        FlexboxLayout.LayoutParams params = new FlexboxLayout.LayoutParams(
+                FlexboxLayout.LayoutParams.WRAP_CONTENT,
+                FlexboxLayout.LayoutParams.WRAP_CONTENT);
+        params.setFlexShrink(0);
+        params.setMargins(0, 0, DisplayUtil.dpToPx(this, 8), DisplayUtil.dpToPx(this, 8));
+        tagLayout.setLayoutParams(params);
+
+        availableContainer.addView(tagLayout);
+    }
+
+    /**
+     * 创建标签视图（颜色方块 + 标签名，可选×按钮）
+     */
+    private LinearLayout createTagView(long tagId, String tagName, String tagColor, boolean showRemoveBtn) {
+        LinearLayout tagLayout = new LinearLayout(this);
+        tagLayout.setOrientation(LinearLayout.HORIZONTAL);
+        tagLayout.setGravity(Gravity.CENTER_VERTICAL);
+        tagLayout.setPadding(DisplayUtil.dpToPx(this, 8), DisplayUtil.dpToPx(this, 8),
+                DisplayUtil.dpToPx(this, 8), DisplayUtil.dpToPx(this, 8));
+
+        // 颜色方块
+        View colorView = new View(this);
+        int colorSize = DisplayUtil.dpToPx(this, 24);
+        LinearLayout.LayoutParams colorParams = new LinearLayout.LayoutParams(colorSize, colorSize);
+        colorView.setLayoutParams(colorParams);
+        try {
+            colorView.setBackgroundColor(Color.parseColor(tagColor));
+        } catch (Exception e) {
+            colorView.setBackgroundColor(Color.GRAY);
+        }
+
+        // 标签名
+        TextView tagText = new TextView(this);
+        tagText.setText(tagName);
+        tagText.setTextSize(16);
+        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        textParams.setMargins(DisplayUtil.dpToPx(this, 8), 0, 0, 0);
+        tagText.setLayoutParams(textParams);
+
+        tagLayout.addView(colorView);
+        tagLayout.addView(tagText);
+
+        // 删除按钮（×）
+        if (showRemoveBtn) {
+            TextView removeBtn = new TextView(this);
+            removeBtn.setText("✕");
+            removeBtn.setTextSize(14);
+            removeBtn.setTextColor(Color.RED);
+            LinearLayout.LayoutParams removeParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            removeParams.setMargins(DisplayUtil.dpToPx(this, 16), 0, 0, 0);
+            removeBtn.setLayoutParams(removeParams);
+            tagLayout.addView(removeBtn);
+        }
+
+        return tagLayout;
     }
     
     /**
@@ -2787,6 +2909,83 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         // 取消按钮
         builder.setNegativeButton("取消", null);
         
+        builder.show();
+    }
+
+    /**
+     * 显示全局设置对话框
+     */
+    private void showGlobalSettingsDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        View settingsView = getLayoutInflater().inflate(R.layout.dialog_global_settings, null);
+        builder.setView(settingsView);
+        builder.setTitle("全局设置");
+
+        // 时间排序下拉框
+        Spinner spinnerTimeDescOrder = settingsView.findViewById(R.id.spinnerTimeDescOrder);
+        String[] sortOptions = {"时间降序", "时间升序"};
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, sortOptions);
+        spinnerTimeDescOrder.setAdapter(adapter);
+        String globalTimeDescOrder = dbHelper.getSetting(NoteDbHelper.KEY_TIME_DESC_ORDER, "true");
+        spinnerTimeDescOrder.setSelection(globalTimeDescOrder.equals("true") ? 0 : 1);
+
+        // 折叠字数
+        EditText editTextFoldLength = settingsView.findViewById(R.id.editTextFoldDisplayLength);
+        String globalFoldLength = dbHelper.getSetting(NoteDbHelper.KEY_FOLD_DISPLAY_LENGTH, "300");
+        editTextFoldLength.setText(globalFoldLength);
+
+        // 关于按钮
+        Button buttonAbout = settingsView.findViewById(R.id.buttonAbout);
+        buttonAbout.setOnClickListener(v -> showAboutDialog());
+
+        // 数据管理按钮
+        Button buttonDataManagement = settingsView.findViewById(R.id.buttonDataManagement);
+        buttonDataManagement.setOnClickListener(v -> showDataManagementDialog());
+
+        // 提醒设置按钮
+        Button buttonReminderSettings = settingsView.findViewById(R.id.buttonReminderSettings);
+        buttonReminderSettings.setOnClickListener(v -> showReminderSettingsDialog());
+
+        // 保存按钮
+        builder.setPositiveButton("保存", (dialog, which) -> {
+            // 保存全局时间排序
+            boolean isTimeDesc = (spinnerTimeDescOrder.getSelectedItemPosition() == 0);
+            dbHelper.saveSetting(NoteDbHelper.KEY_TIME_DESC_ORDER, String.valueOf(isTimeDesc));
+
+            // 保存全局折叠字数
+            String foldLength = editTextFoldLength.getText().toString().trim();
+            if (!foldLength.isEmpty()) {
+                dbHelper.saveSetting(NoteDbHelper.KEY_FOLD_DISPLAY_LENGTH, foldLength);
+            }
+
+            Toast.makeText(this, "全局设置已保存", Toast.LENGTH_SHORT).show();
+        });
+
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
+
+    private void showAboutDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("关于");
+        builder.setMessage("NotePlus\n版本: 1.1\n\n一个简洁的笔记应用");
+        builder.setPositiveButton("确定", null);
+        builder.show();
+    }
+
+    private void showDataManagementDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("数据管理");
+        builder.setMessage("数据管理功能开发中");
+        builder.setPositiveButton("确定", null);
+        builder.show();
+    }
+
+    private void showReminderSettingsDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("提醒设置");
+        builder.setMessage("提醒设置功能开发中");
+        builder.setPositiveButton("确定", null);
         builder.show();
     }
 
