@@ -235,6 +235,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     // 添加成员变量来存储待导入的文件信息
     private Uri pendingImportUri = null;
     private String pendingImportFormat = null;
+    private boolean isImportAllProjects = false;
 
     // 搜索相关
     private boolean isSearchMode = false;
@@ -1400,6 +1401,9 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             return true;
         } else if (id == R.id.action_settings) {
             showSettingsDialog();
+            return true;
+        } else if (id == R.id.action_global_settings) {
+            showGlobalSettingsDialog();
             return true;
         } else if (id == R.id.action_multi_select) {
             toggleMultiSelectMode();
@@ -2819,14 +2823,23 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         Switch reminderSwitch = settingsView.findViewById(R.id.switchReminder);
         reminderSwitch.setChecked(ReminderScheduler.isReminderEnabled(this));
         
-        // 初始化时间排序开关
+        // 初始化时间排序开关（优先读项目设置，没有则读全局设置）
         Switch timeDescOrderSwitch = settingsView.findViewById(R.id.switchTimeDescOrder);
-        timeDescOrderSwitch.setChecked(timeDescOrder);
-        
-        // 初始化折叠显示字数输入框
+        String projectTimeDescOrder = dbHelper.getSetting(NoteDbHelper.KEY_TIME_DESC_ORDER, null);
+        if (projectTimeDescOrder == null) {
+            // 项目未设置，使用全局设置
+            projectTimeDescOrder = dbHelper.getSetting(NoteDbHelper.KEY_GLOBAL_TIME_DESC_ORDER, "true");
+        }
+        timeDescOrderSwitch.setChecked(Boolean.parseBoolean(projectTimeDescOrder));
+
+        // 初始化折叠显示字数输入框（优先读项目设置，没有则读全局设置）
         EditText foldDisplayLengthEdit = settingsView.findViewById(R.id.editTextFoldDisplayLength);
-        String currentFoldLength = dbHelper.getSetting(NoteDbHelper.KEY_FOLD_DISPLAY_LENGTH, "300");
-        foldDisplayLengthEdit.setText(currentFoldLength);
+        String projectFoldLength = dbHelper.getSetting(NoteDbHelper.KEY_FOLD_DISPLAY_LENGTH, null);
+        if (projectFoldLength == null) {
+            // 项目未设置，使用全局设置
+            projectFoldLength = dbHelper.getSetting(NoteDbHelper.KEY_GLOBAL_FOLD_DISPLAY_LENGTH, "300");
+        }
+        foldDisplayLengthEdit.setText(projectFoldLength);
 
         // 已归档入口（项目设置内）
         Button archivedNotesButton = settingsView.findViewById(R.id.btnArchivedNotes);
@@ -2926,12 +2939,12 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         String[] sortOptions = {"时间降序", "时间升序"};
         ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, sortOptions);
         spinnerTimeDescOrder.setAdapter(adapter);
-        String globalTimeDescOrder = dbHelper.getSetting(NoteDbHelper.KEY_TIME_DESC_ORDER, "true");
+        String globalTimeDescOrder = dbHelper.getSetting(NoteDbHelper.KEY_GLOBAL_TIME_DESC_ORDER, "true");
         spinnerTimeDescOrder.setSelection(globalTimeDescOrder.equals("true") ? 0 : 1);
 
         // 折叠字数
         EditText editTextFoldLength = settingsView.findViewById(R.id.editTextFoldDisplayLength);
-        String globalFoldLength = dbHelper.getSetting(NoteDbHelper.KEY_FOLD_DISPLAY_LENGTH, "300");
+        String globalFoldLength = dbHelper.getSetting(NoteDbHelper.KEY_GLOBAL_FOLD_DISPLAY_LENGTH, "300");
         editTextFoldLength.setText(globalFoldLength);
 
         // 关于按钮
@@ -2950,12 +2963,12 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         builder.setPositiveButton("保存", (dialog, which) -> {
             // 保存全局时间排序
             boolean isTimeDesc = (spinnerTimeDescOrder.getSelectedItemPosition() == 0);
-            dbHelper.saveSetting(NoteDbHelper.KEY_TIME_DESC_ORDER, String.valueOf(isTimeDesc));
+            dbHelper.saveSetting(NoteDbHelper.KEY_GLOBAL_TIME_DESC_ORDER, String.valueOf(isTimeDesc));
 
             // 保存全局折叠字数
             String foldLength = editTextFoldLength.getText().toString().trim();
             if (!foldLength.isEmpty()) {
-                dbHelper.saveSetting(NoteDbHelper.KEY_FOLD_DISPLAY_LENGTH, foldLength);
+                dbHelper.saveSetting(NoteDbHelper.KEY_GLOBAL_FOLD_DISPLAY_LENGTH, foldLength);
             }
 
             Toast.makeText(this, "全局设置已保存", Toast.LENGTH_SHORT).show();
@@ -2976,16 +2989,186 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     private void showDataManagementDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("数据管理");
-        builder.setMessage("数据管理功能开发中");
-        builder.setPositiveButton("确定", null);
+
+        String[] options = {"全量导出", "全量导入", "备份当前项目", "恢复当前项目"};
+
+        builder.setItems(options, (dialog, which) -> {
+            switch (which) {
+                case 0: // 全量导出
+                    exportAllProjectsData();
+                    break;
+                case 1: // 全量导入
+                    importAllProjectsData();
+                    break;
+                case 2: // 备份当前项目
+                    exportData("JSON");
+                    break;
+                case 3: // 恢复当前项目
+                    importData("JSON");
+                    break;
+            }
+        });
+
+        builder.setNegativeButton("取消", null);
         builder.show();
+    }
+
+    /**
+     * 导出所有项目数据
+     */
+    private void exportAllProjectsData() {
+        Toast.makeText(this, "开始全量导出...", Toast.LENGTH_SHORT).show();
+
+        String fileName = "NotePlus_AllProjects_" + new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date()) + ".json.txt";
+        String mimeType = "text/plain";
+
+        android.util.Log.i("NotePlusExport", "All Projects Export - File name: " + fileName);
+
+        // 显示进度对话框
+        ProgressDialog progressDialog = new ProgressDialog(this);
+        progressDialog.setMessage("正在导出所有项目数据...");
+        progressDialog.setCancelable(false);
+        progressDialog.show();
+
+        new Thread(() -> {
+            boolean success = false;
+            Uri fileUri = null;
+
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    ContentResolver resolver = getContentResolver();
+
+                    // 先尝试删除已存在的文件
+                    try {
+                        Uri existingUri = MediaStore.Files.getContentUri("external");
+                        String selection = MediaStore.MediaColumns.DISPLAY_NAME + "=? AND " +
+                                         MediaStore.MediaColumns.RELATIVE_PATH + "=?";
+                        String[] selectionArgs = new String[]{
+                            fileName,
+                            Environment.DIRECTORY_DOCUMENTS + "/"
+                        };
+                        resolver.delete(existingUri, selection, selectionArgs);
+                    } catch (Exception e) {
+                        android.util.Log.w("NotePlusExport", "Failed to delete existing file: " + e.getMessage());
+                    }
+
+                    ContentValues values = new ContentValues();
+                    values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
+                    values.put(MediaStore.MediaColumns.MIME_TYPE, mimeType);
+                    values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOCUMENTS + "/");
+
+                    fileUri = resolver.insert(MediaStore.Files.getContentUri("external"), values);
+
+                    if (fileUri != null) {
+                        OutputStream outputStream = resolver.openOutputStream(fileUri);
+                        if (outputStream != null) {
+                            importExportManager.exportAllProjects(outputStream);
+                            outputStream.close();
+                            success = true;
+                        }
+                    }
+                } else {
+                    File documentsFolder = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS);
+                    if (!documentsFolder.exists()) {
+                        documentsFolder.mkdirs();
+                    }
+                    File outputFile = new File(documentsFolder, fileName);
+                    FileOutputStream fos = new FileOutputStream(outputFile);
+                    importExportManager.exportAllProjects(fos);
+                    fos.close();
+                    fileUri = Uri.fromFile(outputFile);
+                    success = true;
+                }
+            } catch (Exception e) {
+                android.util.Log.e("NotePlusExport", "All projects export failed", e);
+            }
+
+            final Uri finalFileUri = fileUri;
+            final boolean finalSuccess = success;
+
+            runOnUiThread(() -> {
+                progressDialog.dismiss();
+                if (finalSuccess) {
+                    showExportSuccessDialog("JSON（全量）", finalFileUri);
+                } else {
+                    Toast.makeText(MainActivity.this, "全量导出失败，请重试", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }).start();
+    }
+
+    /**
+     * 导入所有项目数据
+     */
+    private void importAllProjectsData() {
+        // 使用系统文件选择器选择JSON文件
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        String[] mimeTypes = {"application/json", "text/plain", "text/csv"};
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes);
+
+        // 存储待导入的文件信息
+        pendingImportUri = null;
+        pendingImportFormat = "JSON";
+        isImportAllProjects = true;
+
+        startActivityForResult(Intent.createChooser(intent, "选择要导入的文件"), PICK_FILE_REQUEST_CODE);
     }
 
     private void showReminderSettingsDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("提醒设置");
-        builder.setMessage("提醒设置功能开发中");
-        builder.setPositiveButton("确定", null);
+
+        // 创建自定义布局
+        View settingsView = getLayoutInflater().inflate(R.layout.dialog_settings, null);
+        builder.setView(settingsView);
+
+        // 获取提醒开关
+        Switch reminderSwitch = settingsView.findViewById(R.id.switchReminder);
+        reminderSwitch.setChecked(ReminderScheduler.isReminderEnabled(this));
+
+        // 获取提醒间隔输入框
+        EditText intervalEdit = settingsView.findViewById(R.id.editTextReminderInterval);
+        long currentIntervalMillis = ReminderScheduler.getReminderInterval(this);
+        int currentIntervalMinutes = (int) (currentIntervalMillis / (60 * 1000));
+        intervalEdit.setText(String.valueOf(currentIntervalMinutes));
+
+        // 隐藏项目设置相关控件（只保留提醒设置相关）
+        settingsView.findViewById(R.id.switchTimeRangeDisplay).setVisibility(View.GONE);
+        settingsView.findViewById(R.id.switchTimeRangeRequired).setVisibility(View.GONE);
+        settingsView.findViewById(R.id.switchCostDisplay).setVisibility(View.GONE);
+        settingsView.findViewById(R.id.switchCostRequired).setVisibility(View.GONE);
+        settingsView.findViewById(R.id.switchTimeDescOrder).setVisibility(View.GONE);
+        settingsView.findViewById(R.id.editTextFoldDisplayLength).setVisibility(View.GONE);
+        settingsView.findViewById(R.id.btnArchivedNotes).setVisibility(View.GONE);
+
+        builder.setPositiveButton("保存", (dialog, which) -> {
+            boolean enabled = reminderSwitch.isChecked();
+            String intervalStr = intervalEdit.getText().toString().trim();
+            int intervalMinutes;
+            try {
+                intervalMinutes = Integer.parseInt(intervalStr);
+                if (intervalMinutes < 1) {
+                    intervalMinutes = 1;
+                }
+            } catch (NumberFormatException e) {
+                intervalMinutes = 10;
+            }
+
+            long intervalMillis = intervalMinutes * 60 * 1000;
+            ReminderScheduler.setReminderInterval(this, intervalMillis);
+
+            if (enabled) {
+                ReminderScheduler.startReminder(this);
+            } else {
+                ReminderScheduler.stopReminder(this);
+            }
+
+            Toast.makeText(this, "提醒设置已保存", Toast.LENGTH_SHORT).show();
+        });
+
+        builder.setNegativeButton("取消", null);
         builder.show();
     }
 
@@ -4708,9 +4891,15 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                          }
                     }
                 }
-                
-                // 显示导入目标选择对话框
-                showImportTargetDialog();
+
+                // 如果是全量导入，直接执行；否则显示导入目标选择对话框
+                if (isImportAllProjects) {
+                    isImportAllProjects = false; // 重置标志
+                    importToCurrentProject(); // 全量导入不需要指定项目
+                } else {
+                    // 显示导入目标选择对话框
+                    showImportTargetDialog();
+                }
             }
         }
     }

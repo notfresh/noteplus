@@ -66,6 +66,11 @@
         app:showAsAction="never" />
 
     <item
+        android:id="@+id/action_global_settings"
+        android:title="全局设置"
+        app:showAsAction="never" />
+
+    <item
         android:id="@+id/action_cancel_multi_select"
         android:title="取消多选"
         android:icon="@drawable/ic_cancel"

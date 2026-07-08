@@ -22,6 +22,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -204,6 +205,157 @@ public class ImportExportManager {
         android.util.Log.d("NotePlusExport", "[writeJsonData] Flushing output stream");
         writer.flush();
         android.util.Log.i("NotePlusExport", "[writeJsonData] JSON data export completed successfully");
+    }
+
+    /**
+     * 全量导出所有项目（JSON格式）
+     */
+    public void exportAllProjects(OutputStream outputStream) throws IOException, JSONException {
+        android.util.Log.i("NotePlusExport", "[exportAllProjects] Starting all projects export");
+
+        JSONObject rootObject = new JSONObject();
+        rootObject.put("exportType", "all_projects");
+        rootObject.put("exportDate", sdf.format(new Date()));
+
+        JSONObject projectsObject = new JSONObject();
+
+        // 获取所有项目
+        List<String> allProjects = projectManager.getProjectList();
+        android.util.Log.d("NotePlusExport", "[exportAllProjects] Found " + allProjects.size() + " projects");
+
+        String originalProject = projectManager.getCurrentProject();
+
+        for (String projectName : allProjects) {
+            android.util.Log.d("NotePlusExport", "[exportAllProjects] Exporting project: " + projectName);
+
+            // 切换到项目以获取其数据
+            projectManager.switchToProject(projectName);
+
+            // 获取切换后项目的数据库帮助器
+            NoteDbHelper projectDbHelper = projectManager.getCurrentDbHelper();
+            SQLiteDatabase db = projectDbHelper.getReadableDatabase();
+            Cursor notesCursor = db.query(
+                NoteDbHelper.TABLE_NOTES,
+                new String[]{
+                    "_id",
+                    NoteDbHelper.COLUMN_CONTENT,
+                    NoteDbHelper.COLUMN_TIMESTAMP,
+                    NoteDbHelper.COLUMN_COST,
+                    NoteDbHelper.COLUMN_IS_ARCHIVED,
+                    NoteDbHelper.COLUMN_ARCHIVED_AT
+                },
+                null, null, null, null,
+                NoteDbHelper.COLUMN_TIMESTAMP + " DESC"
+            );
+
+            JSONArray notesArray = new JSONArray();
+
+            // 构建该项目的笔记记录
+            while (notesCursor.moveToNext()) {
+                JSONObject noteObject = new JSONObject();
+
+                long noteId = notesCursor.getLong(notesCursor.getColumnIndexOrThrow("_id"));
+                String content = notesCursor.getString(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_CONTENT));
+                long timestamp = notesCursor.getLong(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TIMESTAMP));
+                double cost = notesCursor.getDouble(notesCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COST));
+                int isArchived = 0;
+                long archivedAt = 0;
+                int archivedIndex = notesCursor.getColumnIndex(NoteDbHelper.COLUMN_IS_ARCHIVED);
+                if (archivedIndex >= 0) {
+                    isArchived = notesCursor.getInt(archivedIndex);
+                }
+                int archivedAtIndex = notesCursor.getColumnIndex(NoteDbHelper.COLUMN_ARCHIVED_AT);
+                if (archivedAtIndex >= 0) {
+                    archivedAt = notesCursor.getLong(archivedAtIndex);
+                }
+
+                noteObject.put("id", noteId);
+                noteObject.put("content", content);
+                noteObject.put("timestamp", sdf.format(new Date(timestamp)));
+                noteObject.put("cost", cost);
+                noteObject.put("archived", isArchived == 1);
+                if (archivedAt > 0) {
+                    noteObject.put("archivedAt", sdf.format(new Date(archivedAt)));
+                }
+
+                // 获取时间范围
+                Cursor timeRangeCursor = projectDbHelper.getTimeRangesForNote(noteId);
+                if (timeRangeCursor.moveToFirst()) {
+                    JSONObject timeRange = new JSONObject();
+                    long startTime = timeRangeCursor.getLong(timeRangeCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_START_TIME));
+                    long endTime = timeRangeCursor.getLong(timeRangeCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_END_TIME));
+                    timeRange.put("start", sdf.format(new Date(startTime)));
+                    timeRange.put("end", sdf.format(new Date(endTime)));
+                    noteObject.put("timeRange", timeRange);
+                }
+                timeRangeCursor.close();
+
+                // 获取标签
+                Cursor tagsCursor = projectDbHelper.getTagsForNote(noteId);
+                JSONArray tagsArray = new JSONArray();
+                while (tagsCursor.moveToNext()) {
+                    JSONObject tagObject = new JSONObject();
+                    tagObject.put("name", tagsCursor.getString(tagsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TAG_NAME)));
+                    tagObject.put("color", tagsCursor.getString(tagsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_TAG_COLOR)));
+                    tagsArray.put(tagObject);
+                }
+                tagsCursor.close();
+                noteObject.put("tags", tagsArray);
+
+                // 获取评论
+                Cursor commentsCursor = projectDbHelper.getCommentsForNote(noteId);
+                JSONArray commentsArray = new JSONArray();
+                while (commentsCursor.moveToNext()) {
+                    JSONObject commentObject = new JSONObject();
+                    long commentId = commentsCursor.getLong(commentsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_ID));
+                    int parentIdIndex = commentsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_PARENT_COMMENT_ID);
+                    String commentContent = commentsCursor.getString(commentsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_CONTENT));
+                    long commentTimestamp = commentsCursor.getLong(commentsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_TIMESTAMP));
+                    double commentCost = commentsCursor.getDouble(commentsCursor.getColumnIndexOrThrow(NoteDbHelper.COLUMN_COMMENT_COST));
+
+                    commentObject.put("commentId", commentId);
+                    if (!commentsCursor.isNull(parentIdIndex)) {
+                        commentObject.put("parentCommentId", commentsCursor.getLong(parentIdIndex));
+                    } else {
+                        commentObject.put("parentCommentId", JSONObject.NULL);
+                    }
+                    commentObject.put("content", commentContent);
+                    commentObject.put("timestamp", sdf.format(new Date(commentTimestamp)));
+                    commentObject.put("cost", commentCost);
+
+                    commentsArray.put(commentObject);
+                }
+                commentsCursor.close();
+
+                if (commentsArray.length() > 0) {
+                    noteObject.put("comments", commentsArray);
+                }
+
+                notesArray.put(noteObject);
+            }
+
+            notesCursor.close();
+
+            // 创建项目对象
+            JSONObject projectObject = new JSONObject();
+            projectObject.put("projectName", projectName);
+            projectObject.put("exportDate", sdf.format(new Date()));
+            projectObject.put("notes", notesArray);
+
+            projectsObject.put(projectName, projectObject);
+        }
+
+        rootObject.put("projects", projectsObject);
+
+        // 恢复当前项目
+        projectManager.switchToProject(originalProject);
+        android.util.Log.d("NotePlusExport", "[exportAllProjects] Restored to original project: " + originalProject);
+
+        // 写入文件
+        OutputStreamWriter writer = new OutputStreamWriter(outputStream, StandardCharsets.UTF_8);
+        writer.write(rootObject.toString(2));
+        writer.flush();
+        android.util.Log.i("NotePlusExport", "[exportAllProjects] All projects export completed successfully");
     }
 
     /**
@@ -407,8 +559,18 @@ public class ImportExportManager {
         inputStream.close();
         
         JSONObject rootObject = new JSONObject(jsonString.toString());
+
+        // 检测导出类型
+        String exportType = rootObject.optString("exportType", "single_project");
+        android.util.Log.d("NotePlusImport", "[readJsonData] Detected exportType: " + exportType);
+
+        if ("all_projects".equals(exportType)) {
+            return importAllProjects(rootObject);
+        }
+
+        // 单项目导入逻辑
         JSONArray notesArray = rootObject.getJSONArray("notes");
-        
+
         int importedCount = 0;
         int skippedCount = 0;
         
@@ -546,6 +708,145 @@ public class ImportExportManager {
         }
         
         return new ImportResult(importedCount, skippedCount);
+    }
+
+    /**
+     * 全量导入所有项目
+     */
+    private ImportResult importAllProjects(JSONObject rootObject) throws Exception {
+        android.util.Log.i("NotePlusImport", "[importAllProjects] Starting all projects import");
+
+        ImportResult result = new ImportResult(0, 0);
+        JSONObject projectsObject = rootObject.getJSONObject("projects");
+
+        Iterator<String> projectKeys = projectsObject.keys();
+        while (projectKeys.hasNext()) {
+            String projectName = projectKeys.next();
+            android.util.Log.d("NotePlusImport", "[importAllProjects] Importing project: " + projectName);
+
+            JSONObject projectData = projectsObject.getJSONObject(projectName);
+
+            // 确保项目存在（createProject返回false表示项目已存在，这是正常的）
+            projectManager.createProject(projectName);
+
+            // 切换到该项目
+            projectManager.switchToProject(projectName);
+
+            // 复用单项目导入逻辑（通过提取notes数组并调用核心导入逻辑）
+            JSONArray notesArray = projectData.getJSONArray("notes");
+            int projectImported = 0;
+            int projectSkipped = 0;
+
+            SQLiteDatabase db = dbHelper.getWritableDatabase();
+            db.beginTransaction();
+
+            try {
+                for (int i = 0; i < notesArray.length(); i++) {
+                    try {
+                        JSONObject noteObject = notesArray.getJSONObject(i);
+
+                        // 解析笔记基本信息
+                        String content = noteObject.getString("content");
+                        String timestampStr = noteObject.getString("timestamp");
+                        long timestamp = sdf.parse(timestampStr).getTime();
+
+                        ContentValues noteValues = new ContentValues();
+                        noteValues.put(NoteDbHelper.COLUMN_CONTENT, content);
+                        noteValues.put(NoteDbHelper.COLUMN_TIMESTAMP, timestamp);
+
+                        if (noteObject.has("cost")) {
+                            double cost = noteObject.getDouble("cost");
+                            noteValues.put(NoteDbHelper.COLUMN_COST, cost);
+                        }
+
+                        boolean archived = noteObject.optBoolean("archived", false);
+                        noteValues.put(NoteDbHelper.COLUMN_IS_ARCHIVED, archived ? 1 : 0);
+                        if (archived && noteObject.has("archivedAt")) {
+                            String archivedAtStr = noteObject.getString("archivedAt");
+                            long archivedAt = sdf.parse(archivedAtStr).getTime();
+                            noteValues.put(NoteDbHelper.COLUMN_ARCHIVED_AT, archivedAt);
+                        } else {
+                            noteValues.put(NoteDbHelper.COLUMN_ARCHIVED_AT, 0);
+                        }
+
+                        long newNoteId = db.insert(NoteDbHelper.TABLE_NOTES, null, noteValues);
+
+                        // 处理时间范围
+                        if (noteObject.has("timeRange")) {
+                            JSONObject timeRange = noteObject.getJSONObject("timeRange");
+                            long startTime = sdf.parse(timeRange.getString("start")).getTime();
+                            long endTime = sdf.parse(timeRange.getString("end")).getTime();
+                            dbHelper.saveTimeRange(newNoteId, startTime, endTime);
+                        }
+
+                        // 处理标签
+                        if (noteObject.has("tags")) {
+                            JSONArray tagsArray = noteObject.getJSONArray("tags");
+                            for (int j = 0; j < tagsArray.length(); j++) {
+                                JSONObject tagObject = tagsArray.getJSONObject(j);
+                                String tagName = tagObject.getString("name");
+                                String tagColor = tagObject.getString("color");
+                                // 检查标签是否存在
+                                long tagId = dbHelper.getTagIdByName(tagName);
+                                if (tagId == -1) {
+                                    tagId = dbHelper.addTag(tagName, tagColor);
+                                }
+                                if (tagId != -1) {
+                                    dbHelper.linkNoteToTag(newNoteId, tagId);
+                                }
+                            }
+                        }
+
+                        // 处理评论
+                        if (noteObject.has("comments")) {
+                            Map<Long, Long> commentIdMap = new HashMap<>();
+                            JSONArray commentsArray = noteObject.getJSONArray("comments");
+                            for (int j = 0; j < commentsArray.length(); j++) {
+                                JSONObject commentObject = commentsArray.getJSONObject(j);
+                                long oldCommentId = commentObject.getLong("commentId");
+                                String commentContent = commentObject.getString("content");
+                                long commentTimestamp = sdf.parse(commentObject.getString("timestamp")).getTime();
+                                double commentCost = commentObject.optDouble("cost", 0);
+
+                                ContentValues commentValues = new ContentValues();
+                                commentValues.put(NoteDbHelper.COLUMN_NOTE_ID, newNoteId);
+                                if (commentObject.has("parentCommentId") && !commentObject.isNull("parentCommentId")) {
+                                    Long newParentCommentId = commentIdMap.get(commentObject.getLong("parentCommentId"));
+                                    if (newParentCommentId != null) {
+                                        commentValues.put(NoteDbHelper.COLUMN_PARENT_COMMENT_ID, newParentCommentId);
+                                    }
+                                }
+                                commentValues.put(NoteDbHelper.COLUMN_COMMENT_CONTENT, commentContent);
+                                commentValues.put(NoteDbHelper.COLUMN_COMMENT_TIMESTAMP, commentTimestamp);
+                                commentValues.put(NoteDbHelper.COLUMN_COMMENT_COST, commentCost);
+
+                                long newCommentId = db.insert(NoteDbHelper.TABLE_NOTE_COMMENTS, null, commentValues);
+                                if (newCommentId != -1) {
+                                    commentIdMap.put(oldCommentId, newCommentId);
+                                }
+                            }
+                        }
+
+                        projectImported++;
+
+                    } catch (Exception e) {
+                        projectSkipped++;
+                        e.printStackTrace();
+                    }
+                }
+
+                db.setTransactionSuccessful();
+
+            } finally {
+                db.endTransaction();
+            }
+
+            android.util.Log.d("NotePlusImport", "[importAllProjects] Project " + projectName + " imported: " + projectImported + ", skipped: " + projectSkipped);
+            result.merge(new ImportResult(projectImported, projectSkipped));
+        }
+
+        android.util.Log.i("NotePlusImport", "[importAllProjects] All projects imported: " + result.importedCount + ", skipped: " + result.skippedCount);
+        return result;
     }
 
     /**
@@ -878,6 +1179,13 @@ public class ImportExportManager {
         public ImportResult(int importedCount, int skippedCount) {
             this.importedCount = importedCount;
             this.skippedCount = skippedCount;
+        }
+
+        public ImportResult merge(ImportResult other) {
+            return new ImportResult(
+                this.importedCount + other.importedCount,
+                this.skippedCount + other.skippedCount
+            );
         }
     }
 }

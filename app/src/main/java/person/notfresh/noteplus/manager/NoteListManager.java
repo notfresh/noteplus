@@ -2872,13 +2872,20 @@ public class NoteListManager {
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
         View dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_note_tag_edit, null);
         builder.setView(dialogView);
-        builder.setTitle("编辑标签");
+        // 标题和关闭按钮放在布局里，不再用 builder.setTitle()
 
         // 获取容器（现在是 FlexboxLayout）
         FlexboxLayout currentTagsContainer = dialogView.findViewById(R.id.currentTagsContainer);
         FlexboxLayout allTagsContainer = dialogView.findViewById(R.id.allTagsContainer);
         EditText editNewTagName = dialogView.findViewById(R.id.editNewTagName);
         Button buttonCreateTag = dialogView.findViewById(R.id.buttonCreateTag);
+        TextView buttonCloseDialog = dialogView.findViewById(R.id.buttonCloseDialog);
+
+        // 创建 dialog 但先不显示，用于设置点击监听器
+        AlertDialog dialog = builder.create();
+
+        // 右上角关闭按钮
+        buttonCloseDialog.setOnClickListener(v -> dialog.dismiss());
 
         // 加载当前笔记的标签
         Cursor currentTagsCursor = dbHelper.getTagsForNote(noteId);
@@ -2930,8 +2937,157 @@ public class NoteListManager {
                 removeBtn.setOnClickListener(v -> {
                     dbHelper.unlinkNoteFromTag(noteId, tagId);
                     refreshNoteView(noteId);
-                    builder.create().dismiss();
-                    showNoteTagDialog(noteId);
+                    // Move tag view from currentTagsContainer to allTagsContainer
+                    currentTagsContainer.removeView(tagLayout);
+                    // Create new clickable tag view for allTagsContainer (without remove button)
+                    LinearLayout newTagLayout = new LinearLayout(context);
+                    newTagLayout.setOrientation(LinearLayout.HORIZONTAL);
+                    newTagLayout.setGravity(Gravity.CENTER_VERTICAL);
+                    newTagLayout.setPadding(DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8));
+                    newTagLayout.setClickable(true);
+
+                    View newColorView = new View(context);
+                    int newColorSize = DisplayUtil.dpToPx(context, 24);
+                    LinearLayout.LayoutParams newColorParams = new LinearLayout.LayoutParams(newColorSize, newColorSize);
+                    newColorView.setLayoutParams(newColorParams);
+                    try {
+                        newColorView.setBackgroundColor(Color.parseColor(tagColor));
+                    } catch (Exception e) {
+                        newColorView.setBackgroundColor(Color.GRAY);
+                    }
+
+                    TextView newTagText = new TextView(context);
+                    newTagText.setText(tagName);
+                    newTagText.setTextSize(16);
+                    LinearLayout.LayoutParams newTextParams = new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT);
+                    newTextParams.setMargins(DisplayUtil.dpToPx(context, 8), 0, 0, 0);
+                    newTagText.setLayoutParams(newTextParams);
+
+                    newTagLayout.addView(newColorView);
+                    newTagLayout.addView(newTagText);
+
+                    newTagLayout.setOnClickListener(addV -> {
+                        dbHelper.linkNoteToTag(noteId, tagId);
+                        refreshNoteView(noteId);
+                        // Move tag view from allTagsContainer to currentTagsContainer
+                        allTagsContainer.removeView(newTagLayout);
+                        // Re-create the tag view with remove button for currentTagsContainer
+                        LinearLayout addTagLayout = new LinearLayout(context);
+                        addTagLayout.setOrientation(LinearLayout.HORIZONTAL);
+                        addTagLayout.setGravity(Gravity.CENTER_VERTICAL);
+                        addTagLayout.setPadding(DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8));
+
+                        View addColorView = new View(context);
+                        int addColorSize = DisplayUtil.dpToPx(context, 24);
+                        LinearLayout.LayoutParams addColorParams = new LinearLayout.LayoutParams(addColorSize, addColorSize);
+                        addColorView.setLayoutParams(addColorParams);
+                        try {
+                            addColorView.setBackgroundColor(Color.parseColor(tagColor));
+                        } catch (Exception e) {
+                            addColorView.setBackgroundColor(Color.GRAY);
+                        }
+
+                        TextView addTagText = new TextView(context);
+                        addTagText.setText(tagName);
+                        addTagText.setTextSize(16);
+                        LinearLayout.LayoutParams addTextParams = new LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.WRAP_CONTENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT);
+                        addTextParams.setMargins(DisplayUtil.dpToPx(context, 8), 0, 0, 0);
+                        addTagText.setLayoutParams(addTextParams);
+
+                        TextView addRemoveBtn = new TextView(context);
+                        addRemoveBtn.setText("✕");
+                        addRemoveBtn.setTextSize(14);
+                        addRemoveBtn.setTextColor(Color.RED);
+                        LinearLayout.LayoutParams addRemoveParams = new LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.WRAP_CONTENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT);
+                        addRemoveParams.setMargins(DisplayUtil.dpToPx(context, 16), 0, 0, 0);
+                        addRemoveBtn.setLayoutParams(addRemoveParams);
+
+                        final long capturedTagId = tagId;
+                        addRemoveBtn.setOnClickListener(removeV -> {
+                            dbHelper.unlinkNoteFromTag(noteId, capturedTagId);
+                            refreshNoteView(noteId);
+                            currentTagsContainer.removeView(addTagLayout);
+                            // Re-create for allTagsContainer
+                            LinearLayout readdTagLayout = new LinearLayout(context);
+                            readdTagLayout.setOrientation(LinearLayout.HORIZONTAL);
+                            readdTagLayout.setGravity(Gravity.CENTER_VERTICAL);
+                            readdTagLayout.setPadding(DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8));
+                            readdTagLayout.setClickable(true);
+
+                            View readdColorView = new View(context);
+                            LinearLayout.LayoutParams readdColorParams = new LinearLayout.LayoutParams(addColorSize, addColorSize);
+                            readdColorView.setLayoutParams(readdColorParams);
+                            try {
+                                readdColorView.setBackgroundColor(Color.parseColor(tagColor));
+                            } catch (Exception e) {
+                                readdColorView.setBackgroundColor(Color.GRAY);
+                            }
+
+                            TextView readdTagText = new TextView(context);
+                            readdTagText.setText(tagName);
+                            readdTagText.setTextSize(16);
+                            LinearLayout.LayoutParams readdTextParams = new LinearLayout.LayoutParams(
+                                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                                    LinearLayout.LayoutParams.WRAP_CONTENT);
+                            readdTextParams.setMargins(DisplayUtil.dpToPx(context, 8), 0, 0, 0);
+                            readdTagText.setLayoutParams(readdTextParams);
+
+                            readdTagLayout.addView(readdColorView);
+                            readdTagLayout.addView(readdTagText);
+
+                            readdTagLayout.setOnClickListener(readdV -> {
+                                dbHelper.linkNoteToTag(noteId, capturedTagId);
+                                refreshNoteView(noteId);
+                                allTagsContainer.removeView(readdTagLayout);
+                                currentTagsContainer.addView(addTagLayout);
+                                currentTagsContainer.requestLayout();
+                                addTagLayout.requestLayout();
+                            });
+
+                            FlexboxLayout.LayoutParams readdParams = new FlexboxLayout.LayoutParams(
+                                    FlexboxLayout.LayoutParams.WRAP_CONTENT,
+                                    FlexboxLayout.LayoutParams.WRAP_CONTENT);
+                            readdParams.setFlexShrink(0);
+                            readdParams.setMargins(0, 0, DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8));
+                            readdTagLayout.setLayoutParams(readdParams);
+
+                            allTagsContainer.addView(readdTagLayout);
+                            allTagsContainer.requestLayout();
+                            readdTagLayout.requestLayout();
+                        });
+
+                        addTagLayout.addView(addColorView);
+                        addTagLayout.addView(addTagText);
+                        addTagLayout.addView(addRemoveBtn);
+
+                        FlexboxLayout.LayoutParams addParams = new FlexboxLayout.LayoutParams(
+                                FlexboxLayout.LayoutParams.WRAP_CONTENT,
+                                FlexboxLayout.LayoutParams.WRAP_CONTENT);
+                        addParams.setFlexShrink(0);
+                        addParams.setMargins(0, 0, DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8));
+                        addTagLayout.setLayoutParams(addParams);
+
+                        currentTagsContainer.addView(addTagLayout);
+                        currentTagsContainer.requestLayout();
+                        addTagLayout.requestLayout();
+                    });
+
+                    FlexboxLayout.LayoutParams newParams = new FlexboxLayout.LayoutParams(
+                            FlexboxLayout.LayoutParams.WRAP_CONTENT,
+                            FlexboxLayout.LayoutParams.WRAP_CONTENT);
+                    newParams.setFlexShrink(0);
+                    newParams.setMargins(0, 0, DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8));
+                    newTagLayout.setLayoutParams(newParams);
+
+                    allTagsContainer.addView(newTagLayout);
+                    allTagsContainer.requestLayout();
+                    newTagLayout.requestLayout();
                 });
 
                 tagLayout.addView(colorView);
@@ -2997,8 +3153,168 @@ public class NoteListManager {
                 tagLayout.setOnClickListener(v -> {
                     dbHelper.linkNoteToTag(noteId, tagId);
                     refreshNoteView(noteId);
-                    builder.create().dismiss();
-                    showNoteTagDialog(noteId);
+                    // Move tag view from allTagsContainer to currentTagsContainer
+                    allTagsContainer.removeView(tagLayout);
+                    // Create new tag view with remove button for currentTagsContainer
+                    LinearLayout newTagLayout = new LinearLayout(context);
+                    newTagLayout.setOrientation(LinearLayout.HORIZONTAL);
+                    newTagLayout.setGravity(Gravity.CENTER_VERTICAL);
+                    newTagLayout.setPadding(DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8));
+
+                    View newColorView = new View(context);
+                    int newColorSize = DisplayUtil.dpToPx(context, 24);
+                    LinearLayout.LayoutParams newColorParams = new LinearLayout.LayoutParams(newColorSize, newColorSize);
+                    newColorView.setLayoutParams(newColorParams);
+                    try {
+                        newColorView.setBackgroundColor(Color.parseColor(tagColor));
+                    } catch (Exception e) {
+                        newColorView.setBackgroundColor(Color.GRAY);
+                    }
+
+                    TextView newTagText = new TextView(context);
+                    newTagText.setText(tagName);
+                    newTagText.setTextSize(16);
+                    LinearLayout.LayoutParams newTextParams = new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT);
+                    newTextParams.setMargins(DisplayUtil.dpToPx(context, 8), 0, 0, 0);
+                    newTagText.setLayoutParams(newTextParams);
+
+                    TextView newRemoveBtn = new TextView(context);
+                    newRemoveBtn.setText("✕");
+                    newRemoveBtn.setTextSize(14);
+                    newRemoveBtn.setTextColor(Color.RED);
+                    LinearLayout.LayoutParams newRemoveParams = new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT);
+                    newRemoveParams.setMargins(DisplayUtil.dpToPx(context, 16), 0, 0, 0);
+                    newRemoveBtn.setLayoutParams(newRemoveParams);
+
+                    final long capturedTagId = tagId;
+                    final String capturedTagColor = tagColor;
+                    final String capturedTagName = tagName;
+
+                    newRemoveBtn.setOnClickListener(removeV -> {
+                        dbHelper.unlinkNoteFromTag(noteId, capturedTagId);
+                        refreshNoteView(noteId);
+                        currentTagsContainer.removeView(newTagLayout);
+                        // Create new clickable tag view for allTagsContainer (without remove button)
+                        LinearLayout readdTagLayout = new LinearLayout(context);
+                        readdTagLayout.setOrientation(LinearLayout.HORIZONTAL);
+                        readdTagLayout.setGravity(Gravity.CENTER_VERTICAL);
+                        readdTagLayout.setPadding(DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8));
+                        readdTagLayout.setClickable(true);
+
+                        View readdColorView = new View(context);
+                        LinearLayout.LayoutParams readdColorParams = new LinearLayout.LayoutParams(newColorSize, newColorSize);
+                        readdColorView.setLayoutParams(readdColorParams);
+                        try {
+                            readdColorView.setBackgroundColor(Color.parseColor(capturedTagColor));
+                        } catch (Exception e) {
+                            readdColorView.setBackgroundColor(Color.GRAY);
+                        }
+
+                        TextView readdTagText = new TextView(context);
+                        readdTagText.setText(capturedTagName);
+                        readdTagText.setTextSize(16);
+                        LinearLayout.LayoutParams readdTextParams = new LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.WRAP_CONTENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT);
+                        readdTextParams.setMargins(DisplayUtil.dpToPx(context, 8), 0, 0, 0);
+                        readdTagText.setLayoutParams(readdTextParams);
+
+                        readdTagLayout.addView(readdColorView);
+                        readdTagLayout.addView(readdTagText);
+
+                        readdTagLayout.setOnClickListener(readdV -> {
+                            dbHelper.linkNoteToTag(noteId, capturedTagId);
+                            refreshNoteView(noteId);
+                            allTagsContainer.removeView(readdTagLayout);
+                            // Re-create for currentTagsContainer
+                            LinearLayout addTagLayout = new LinearLayout(context);
+                            addTagLayout.setOrientation(LinearLayout.HORIZONTAL);
+                            addTagLayout.setGravity(Gravity.CENTER_VERTICAL);
+                            addTagLayout.setPadding(DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8));
+
+                            View addColorView = new View(context);
+                            LinearLayout.LayoutParams addColorParams = new LinearLayout.LayoutParams(newColorSize, newColorSize);
+                            addColorView.setLayoutParams(addColorParams);
+                            try {
+                                addColorView.setBackgroundColor(Color.parseColor(capturedTagColor));
+                            } catch (Exception e) {
+                                addColorView.setBackgroundColor(Color.GRAY);
+                            }
+
+                            TextView addTagText = new TextView(context);
+                            addTagText.setText(capturedTagName);
+                            addTagText.setTextSize(16);
+                            LinearLayout.LayoutParams addTextParams = new LinearLayout.LayoutParams(
+                                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                                    LinearLayout.LayoutParams.WRAP_CONTENT);
+                            addTextParams.setMargins(DisplayUtil.dpToPx(context, 8), 0, 0, 0);
+                            addTagText.setLayoutParams(addTextParams);
+
+                            TextView addRemoveBtn = new TextView(context);
+                            addRemoveBtn.setText("✕");
+                            addRemoveBtn.setTextSize(14);
+                            addRemoveBtn.setTextColor(Color.RED);
+                            LinearLayout.LayoutParams addRemoveParams = new LinearLayout.LayoutParams(
+                                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                                    LinearLayout.LayoutParams.WRAP_CONTENT);
+                            addRemoveParams.setMargins(DisplayUtil.dpToPx(context, 16), 0, 0, 0);
+                            addRemoveBtn.setLayoutParams(addRemoveParams);
+
+                            addRemoveBtn.setOnClickListener(addRemoveV -> {
+                                dbHelper.unlinkNoteFromTag(noteId, capturedTagId);
+                                refreshNoteView(noteId);
+                                currentTagsContainer.removeView(addTagLayout);
+                                allTagsContainer.addView(readdTagLayout);
+                                allTagsContainer.requestLayout();
+                                readdTagLayout.requestLayout();
+                            });
+
+                            addTagLayout.addView(addColorView);
+                            addTagLayout.addView(addTagText);
+                            addTagLayout.addView(addRemoveBtn);
+
+                            FlexboxLayout.LayoutParams addParams = new FlexboxLayout.LayoutParams(
+                                    FlexboxLayout.LayoutParams.WRAP_CONTENT,
+                                    FlexboxLayout.LayoutParams.WRAP_CONTENT);
+                            addParams.setFlexShrink(0);
+                            addParams.setMargins(0, 0, DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8));
+                            addTagLayout.setLayoutParams(addParams);
+
+                            currentTagsContainer.addView(addTagLayout);
+                            currentTagsContainer.requestLayout();
+                            addTagLayout.requestLayout();
+                        });
+
+                        FlexboxLayout.LayoutParams readdParams = new FlexboxLayout.LayoutParams(
+                                FlexboxLayout.LayoutParams.WRAP_CONTENT,
+                                FlexboxLayout.LayoutParams.WRAP_CONTENT);
+                        readdParams.setFlexShrink(0);
+                        readdParams.setMargins(0, 0, DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8));
+                        readdTagLayout.setLayoutParams(readdParams);
+
+                        allTagsContainer.addView(readdTagLayout);
+                        allTagsContainer.requestLayout();
+                        readdTagLayout.requestLayout();
+                    });
+
+                    newTagLayout.addView(newColorView);
+                    newTagLayout.addView(newTagText);
+                    newTagLayout.addView(newRemoveBtn);
+
+                    FlexboxLayout.LayoutParams newParams = new FlexboxLayout.LayoutParams(
+                            FlexboxLayout.LayoutParams.WRAP_CONTENT,
+                            FlexboxLayout.LayoutParams.WRAP_CONTENT);
+                    newParams.setFlexShrink(0);
+                    newParams.setMargins(0, 0, DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8));
+                    newTagLayout.setLayoutParams(newParams);
+
+                    currentTagsContainer.addView(newTagLayout);
+                    currentTagsContainer.requestLayout();
+                    newTagLayout.requestLayout();
                 });
 
                 // 添加到 FlexboxLayout 时使用 FlexboxLayout.LayoutParams
@@ -3024,8 +3340,66 @@ public class NoteListManager {
                 if (newTagId > 0) {
                     dbHelper.linkNoteToTag(noteId, newTagId);
                     refreshNoteView(noteId);
-                    builder.create().dismiss();
-                    showNoteTagDialog(noteId);
+                    // Add new tag directly to currentTagsContainer (in-place update)
+                    LinearLayout newTagLayout = new LinearLayout(context);
+                    newTagLayout.setOrientation(LinearLayout.HORIZONTAL);
+                    newTagLayout.setGravity(Gravity.CENTER_VERTICAL);
+                    newTagLayout.setPadding(DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8));
+
+                    View newColorView = new View(context);
+                    int newColorSize = DisplayUtil.dpToPx(context, 24);
+                    LinearLayout.LayoutParams newColorParams = new LinearLayout.LayoutParams(newColorSize, newColorSize);
+                    newColorView.setLayoutParams(newColorParams);
+                    try {
+                        newColorView.setBackgroundColor(Color.parseColor(randomColor));
+                    } catch (Exception e) {
+                        newColorView.setBackgroundColor(Color.GRAY);
+                    }
+
+                    TextView newTagText = new TextView(context);
+                    newTagText.setText(newTagName);
+                    newTagText.setTextSize(16);
+                    LinearLayout.LayoutParams newTextParams = new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT);
+                    newTextParams.setMargins(DisplayUtil.dpToPx(context, 8), 0, 0, 0);
+                    newTagText.setLayoutParams(newTextParams);
+
+                    TextView newRemoveBtn = new TextView(context);
+                    newRemoveBtn.setText("✕");
+                    newRemoveBtn.setTextSize(14);
+                    newRemoveBtn.setTextColor(Color.RED);
+                    LinearLayout.LayoutParams newRemoveParams = new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT);
+                    newRemoveParams.setMargins(DisplayUtil.dpToPx(context, 16), 0, 0, 0);
+                    newRemoveBtn.setLayoutParams(newRemoveParams);
+
+                    final long capturedNewTagId = newTagId;
+                    final String capturedNewTagColor = randomColor;
+                    final String capturedNewTagName = newTagName;
+
+                    newRemoveBtn.setOnClickListener(removeV -> {
+                        dbHelper.unlinkNoteFromTag(noteId, capturedNewTagId);
+                        refreshNoteView(noteId);
+                        currentTagsContainer.removeView(newTagLayout);
+                    });
+
+                    newTagLayout.addView(newColorView);
+                    newTagLayout.addView(newTagText);
+                    newTagLayout.addView(newRemoveBtn);
+
+                    FlexboxLayout.LayoutParams newParams = new FlexboxLayout.LayoutParams(
+                            FlexboxLayout.LayoutParams.WRAP_CONTENT,
+                            FlexboxLayout.LayoutParams.WRAP_CONTENT);
+                    newParams.setFlexShrink(0);
+                    newParams.setMargins(0, 0, DisplayUtil.dpToPx(context, 8), DisplayUtil.dpToPx(context, 8));
+                    newTagLayout.setLayoutParams(newParams);
+
+                    currentTagsContainer.addView(newTagLayout);
+                    currentTagsContainer.requestLayout();
+                    newTagLayout.requestLayout();
+                    editNewTagName.setText("");
                 } else {
                     Toast.makeText(context, "创建标签失败，可能已存在同名标签", Toast.LENGTH_SHORT).show();
                 }
@@ -3033,7 +3407,8 @@ public class NoteListManager {
         });
 
         builder.setNegativeButton("关闭", null);
-        builder.show();
+        // 先创建 dialog，设置好监听器后再显示
+        dialog.show();
     }
 }
 
