@@ -3319,10 +3319,17 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         Button closeButton = dialogView.findViewById(R.id.btnCloseTimeline);
         Spinner rangeSpinner = dialogView.findViewById(R.id.timelineRangeSpinner);
         Button sortButton = dialogView.findViewById(R.id.timelineSortButton);
+        ImageButton jumpToDateButton = dialogView.findViewById(R.id.btnJumpToDate);
 
         // 创建对话框
         AlertDialog dialog = builder.create();
-        
+
+        // 设置跳转日期按钮点击事件
+        jumpToDateButton.setOnClickListener(v -> {
+            dialog.dismiss();
+            showDateJumpDialog();
+        });
+
         // 设置关闭按钮点击事件
         closeButton.setOnClickListener(v -> dialog.dismiss());
 

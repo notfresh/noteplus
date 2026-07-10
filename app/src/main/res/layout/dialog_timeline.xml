@@ -31,6 +31,15 @@
             android:textColor="#FFFFFF"
             android:textSize="14sp"
             android:layout_marginEnd="8dp" />
+
+        <ImageButton
+            android:id="@+id/btnJumpToDate"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@android:drawable/ic_menu_my_calendar"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="跳转到日期"
+            android:tint="#FFFFFF"/>
     </LinearLayout>
 
     <!-- 控制栏 - 时间范围和排序选择 -->
