@@ -10,6 +10,12 @@
         app:showAsAction="always" />
 
     <item
+        android:id="@+id/action_jump_to_date_in_project"
+        android:title="本项目跳转"
+        android:icon="@android:drawable/ic_menu_my_calendar"
+        app:showAsAction="always" />
+
+    <item
         android:id="@+id/action_switch_project"
         android:title="切换项目"
         android:icon="@drawable/ic_projects"
