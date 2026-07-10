@@ -2,9 +2,7 @@ package person.notfresh.noteplus.ui;
 
 import android.app.Dialog;
 import android.os.Bundle;
-import android.view.LayoutInflater;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -188,9 +186,6 @@ public class DateJumpDialog extends DialogFragment {
     @Override
     public void onDestroyView() {
         super.onDestroyView();
-        if (dbHelper != null) {
-            dbHelper.close();
-        }
     }
 
     static class DayViewContainer extends ViewContainer {
