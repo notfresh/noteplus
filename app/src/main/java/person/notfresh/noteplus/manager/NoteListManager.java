@@ -3410,5 +3410,15 @@ public class NoteListManager {
         // 先创建 dialog，设置好监听器后再显示
         dialog.show();
     }
+
+    /**
+     * 滚动到指定日期的笔记（DateJumpDialog使用）
+     * @param dateStr 日期字符串，格式为yyyy-MM-dd
+     * @return 是否找到该日期的笔记
+     */
+    public boolean scrollToDate(String dateStr) {
+        // TODO: 实现滚动到指定日期的逻辑
+        return false;
+    }
 }
 

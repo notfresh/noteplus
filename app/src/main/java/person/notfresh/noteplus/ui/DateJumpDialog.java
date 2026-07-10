@@ -1,0 +1,214 @@
+package person.notfresh.noteplus.ui;
+
+import android.app.Dialog;
+import android.os.Bundle;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
+import androidx.fragment.app.DialogFragment;
+
+import com.kizitonwose.calendarview.CalendarView;
+import com.kizitonwose.calendarview.model.CalendarDay;
+import com.kizitonwose.calendarview.model.CalendarMonth;
+import com.kizitonwose.calendarview.model.DayOwner;
+import com.kizitonwose.calendarview.ui.DayBinder;
+import com.kizitonwose.calendarview.ui.MonthHeaderFooterBinder;
+import com.kizitonwose.calendarview.ui.ViewContainer;
+
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
+import java.util.HashSet;
+import java.util.Locale;
+import java.util.Set;
+
+import person.notfresh.noteplus.R;
+import person.notfresh.noteplus.db.NoteDbHelper;
+import person.notfresh.noteplus.manager.NoteListManager;
+
+public class DateJumpDialog extends DialogFragment {
+
+    private NoteListManager noteListManager;
+    private NoteDbHelper dbHelper;
+    private Set<String> datesWithNotes = new HashSet<>();
+    private DateTimeFormatter dayFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.US);
+    private DateTimeFormatter monthFormatter = DateTimeFormatter.ofPattern("yyyy年MM月", Locale.CHINESE);
+
+    public static DateJumpDialog newInstance() {
+        return new DateJumpDialog();
+    }
+
+    public void setNoteListManager(NoteListManager manager) {
+        this.noteListManager = manager;
+    }
+
+    @NonNull
+    @Override
+    public Dialog onCreateDialog(Bundle savedInstanceState) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(requireContext());
+        View view = getLayoutInflater().inflate(R.layout.dialog_date_jump, null);
+
+        dbHelper = NoteDbHelper.getInstance(requireContext());
+
+        loadDatesWithNotes();
+        setupCalendarView(view);
+        setupCloseButton(view);
+
+        builder.setView(view);
+        return builder.create();
+    }
+
+    private void loadDatesWithNotes() {
+        android.database.Cursor cursor = null;
+        try {
+            cursor = dbHelper.getReadableDatabase().rawQuery(
+                "SELECT DISTINCT date(timestamp/1000, 'unixepoch') FROM notes",
+                null);
+            while (cursor.moveToNext()) {
+                String date = cursor.getString(0);
+                if (date != null) {
+                    datesWithNotes.add(date);
+                }
+            }
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
+    }
+
+    private void setupCalendarView(View view) {
+        CalendarView calendarView = view.findViewById(R.id.calendarView);
+
+        // 计算日历范围
+        YearMonth currentMonth = YearMonth.now();
+        YearMonth firstMonth = currentMonth;
+        YearMonth lastMonth = currentMonth;
+
+        if (!datesWithNotes.isEmpty()) {
+            LocalDate earliest = LocalDate.MAX;
+            LocalDate latest = LocalDate.MIN;
+            for (String dateStr : datesWithNotes) {
+                try {
+                    LocalDate date = LocalDate.parse(dateStr, dayFormatter);
+                    if (date.isBefore(earliest)) earliest = date;
+                    if (date.isAfter(latest)) latest = date;
+                } catch (Exception e) {
+                    // skip invalid dates
+                }
+            }
+            if (!earliest.equals(LocalDate.MAX)) {
+                firstMonth = YearMonth.from(earliest.minusMonths(1));
+            }
+            if (!latest.equals(LocalDate.MIN)) {
+                lastMonth = YearMonth.from(latest.plusMonths(1));
+            }
+        }
+
+        // 额外扩展6个月前后
+        firstMonth = firstMonth.minusMonths(6);
+        lastMonth = lastMonth.plusMonths(6);
+
+        calendarView.setup(firstMonth, lastMonth, DayOfWeek.MONDAY);
+        calendarView.scrollToMonth(currentMonth);
+
+        // 日期单元格绑定
+        calendarView.setDayBinder(new DayBinder<DayViewContainer>() {
+            @Override
+            public DayViewContainer create(View view) {
+                return new DayViewContainer(view);
+            }
+
+            @Override
+            public void bind(DayViewContainer container, CalendarDay day) {
+                container.day = day;
+
+                if (day.getOwner() != DayOwner.THIS_MONTH) {
+                    container.dayText.setVisibility(View.INVISIBLE);
+                    container.dayText.setEnabled(false);
+                    return;
+                }
+
+                container.dayText.setVisibility(View.VISIBLE);
+                container.dayText.setText(String.valueOf(day.getDate().getDayOfMonth()));
+
+                String dateKey = day.getDate().format(dayFormatter);
+                boolean hasNotes = datesWithNotes.contains(dateKey);
+
+                if (hasNotes) {
+                    container.dayText.setBackgroundResource(R.drawable.has_notes_bg);
+                    container.dayText.setTextColor(getResources().getColor(android.R.color.white, null));
+                    container.dayText.setEnabled(true);
+                    container.dayText.setOnClickListener(v -> onDateSelected(day.getDate()));
+                } else {
+                    container.dayText.setBackground(null);
+                    container.dayText.setTextColor(getResources().getColor(android.R.color.darker_gray, null));
+                    container.dayText.setEnabled(false);
+                    container.dayText.setOnClickListener(null);
+                }
+            }
+        });
+
+        // 月份头部绑定
+        calendarView.setMonthHeaderBinder(new MonthHeaderFooterBinder<MonthViewContainer>() {
+            @Override
+            public MonthViewContainer create(View view) {
+                return new MonthViewContainer(view);
+            }
+
+            @Override
+            public void bind(MonthViewContainer container, CalendarMonth month) {
+                container.headerText.setText(month.getYearMonth().format(monthFormatter));
+            }
+        });
+    }
+
+    private void setupCloseButton(View view) {
+        view.findViewById(R.id.btnCloseDateJump).setOnClickListener(v -> dismiss());
+    }
+
+    private void onDateSelected(LocalDate date) {
+        dismiss();
+        if (noteListManager != null) {
+            String dateStr = date.format(dayFormatter);
+            boolean found = noteListManager.scrollToDate(dateStr);
+            if (!found) {
+                Toast.makeText(requireContext(), "该日期无笔记", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        if (dbHelper != null) {
+            dbHelper.close();
+        }
+    }
+
+    static class DayViewContainer extends ViewContainer {
+        TextView dayText;
+        CalendarDay day;
+
+        DayViewContainer(View view) {
+            super(view);
+            dayText = view.findViewById(R.id.dayText);
+        }
+    }
+
+    static class MonthViewContainer extends ViewContainer {
+        TextView headerText;
+
+        MonthViewContainer(View view) {
+            super(view);
+            headerText = view.findViewById(R.id.headerText);
+        }
+    }
+}

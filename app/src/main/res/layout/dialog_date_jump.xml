@@ -42,7 +42,6 @@
         android:layout_height="wrap_content"
         android:padding="8dp"
         app:cv_dayViewResource="@layout/calendar_day_layout"
-        app:cv_monthHeaderResource="@layout/calendar_month_header"
-        app:cv_weekHeaderResource="@layout/calendar_week_header"/>
+        app:cv_monthHeaderResource="@layout/calendar_month_header"/>
 
 </LinearLayout>
