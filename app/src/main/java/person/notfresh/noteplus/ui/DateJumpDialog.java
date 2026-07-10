@@ -77,12 +77,15 @@ public class DateJumpDialog extends DialogFragment {
             cursor = dbHelper.getReadableDatabase().rawQuery(
                 "SELECT DISTINCT date(timestamp/1000, 'unixepoch') FROM notes",
                 null);
+            android.util.Log.d("DateJumpDialog", "查询到 " + cursor.getCount() + " 条日期记录");
             while (cursor.moveToNext()) {
                 String date = cursor.getString(0);
+                android.util.Log.d("DateJumpDialog", "日期: " + date);
                 if (date != null) {
                     datesWithNotes.add(date);
                 }
             }
+            android.util.Log.d("DateJumpDialog", "datesWithNotes 大小: " + datesWithNotes.size());
         } finally {
             if (cursor != null) {
                 cursor.close();
@@ -147,6 +150,7 @@ public class DateJumpDialog extends DialogFragment {
 
                 String dateKey = day.getDate().format(dayFormatter);
                 boolean hasNotes = datesWithNotes.contains(dateKey);
+                android.util.Log.d("DateJumpDialog", "日期: " + dateKey + ", hasNotes: " + hasNotes + ", datesWithNotes size: " + datesWithNotes.size());
 
                 if (hasNotes) {
                     container.dayText.setBackgroundResource(R.drawable.has_notes_bg);
