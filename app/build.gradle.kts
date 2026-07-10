@@ -54,6 +54,9 @@ dependencies {
     // IK 中文分词（Maven Central，可替代 JitPack 方案）
     implementation("com.github.magese:ik-analyzer:8.5.0")
 
+    // Kizitonwose CalendarView for date jump feature
+    implementation("com.github.kizitonwose:CalendarView:1.0.4")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.ext.junit)
     androidTestImplementation(libs.espresso.core)
