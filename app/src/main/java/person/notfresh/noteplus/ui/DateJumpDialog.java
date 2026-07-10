@@ -74,7 +74,17 @@ public class DateJumpDialog extends DialogFragment {
     private void loadDatesWithNotes() {
         android.database.Cursor cursor = null;
         try {
-            cursor = dbHelper.getReadableDatabase().rawQuery(
+            android.database.sqlite.SQLiteDatabase db = dbHelper.getReadableDatabase();
+            android.util.Log.d("DateJumpDialog", "数据库路径: " + db.getPath());
+
+            // 先查询总记录数
+            android.database.Cursor countCursor = db.rawQuery("SELECT COUNT(*) FROM notes", null);
+            if (countCursor.moveToFirst()) {
+                android.util.Log.d("DateJumpDialog", "notes 表总记录数: " + countCursor.getInt(0));
+            }
+            countCursor.close();
+
+            cursor = db.rawQuery(
                 "SELECT DISTINCT date(timestamp/1000, 'unixepoch') FROM notes",
                 null);
             android.util.Log.d("DateJumpDialog", "查询到 " + cursor.getCount() + " 条日期记录");
@@ -86,6 +96,8 @@ public class DateJumpDialog extends DialogFragment {
                 }
             }
             android.util.Log.d("DateJumpDialog", "datesWithNotes 大小: " + datesWithNotes.size());
+        } catch (Exception e) {
+            android.util.Log.e("DateJumpDialog", "查询异常", e);
         } finally {
             if (cursor != null) {
                 cursor.close();
