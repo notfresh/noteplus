@@ -3412,12 +3412,35 @@ public class NoteListManager {
     }
 
     /**
-     * 滚动到指定日期的笔记（DateJumpDialog使用）
-     * @param dateStr 日期字符串，格式为yyyy-MM-dd
-     * @return 是否找到该日期的笔记
+     * 滚动到指定日期的第一条笔记
+     * @param dateStr 日期字符串，格式 "yyyy-MM-dd"
+     * @return 是否成功定位
      */
     public boolean scrollToDate(String dateStr) {
-        // TODO: 实现滚动到指定日期的逻辑
+        if (adapter == null || listView == null) {
+            return false;
+        }
+
+        try {
+            java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US);
+            long startOfDay = sdf.parse(dateStr).getTime();
+            long endOfDay = startOfDay + 24 * 60 * 60 * 1000 - 1;
+
+            // 在 adapter 中找到该日期的第一条笔记
+            for (int i = 0; i < adapter.getCount(); i++) {
+                Object item = adapter.getItem(i);
+                if (item instanceof Note) {
+                    Note note = (Note) item;
+                    long timestamp = note.getTimestamp();
+                    if (timestamp >= startOfDay && timestamp <= endOfDay) {
+                        // 滚动到该位置
+                        return scrollToNote(note.getId());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
         return false;
     }
 }
