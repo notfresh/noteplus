@@ -4,7 +4,6 @@ import android.app.Dialog;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -33,6 +32,11 @@ import person.notfresh.noteplus.manager.NoteListManager;
 
 public class DateJumpDialog extends DialogFragment {
 
+    public interface OnDateSelectedListener {
+        void onDateSelected(LocalDate date);
+    }
+
+    private OnDateSelectedListener dateSelectedListener;
     private NoteListManager noteListManager;
     private NoteDbHelper dbHelper;
     private Set<String> datesWithNotes = new HashSet<>();
@@ -45,6 +49,10 @@ public class DateJumpDialog extends DialogFragment {
 
     public void setNoteListManager(NoteListManager manager) {
         this.noteListManager = manager;
+    }
+
+    public void setOnDateSelectedListener(OnDateSelectedListener listener) {
+        this.dateSelectedListener = listener;
     }
 
     @NonNull
@@ -174,12 +182,8 @@ public class DateJumpDialog extends DialogFragment {
 
     private void onDateSelected(LocalDate date) {
         dismiss();
-        if (noteListManager != null) {
-            String dateStr = date.format(dayFormatter);
-            boolean found = noteListManager.scrollToDate(dateStr);
-            if (!found) {
-                Toast.makeText(requireContext(), "该日期无笔记", Toast.LENGTH_SHORT).show();
-            }
+        if (dateSelectedListener != null) {
+            dateSelectedListener.onDateSelected(date);
         }
     }
 
