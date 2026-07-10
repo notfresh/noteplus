@@ -113,6 +113,7 @@ import person.notfresh.noteplus.util.SearchIndexInitWorker;
 import person.notfresh.noteplus.util.StringUtil;
 import person.notfresh.noteplus.util.DisplayUtil;
 import person.notfresh.noteplus.util.ImageUtil;
+import person.notfresh.noteplus.ui.DateJumpDialog;
 import person.notfresh.noteplus.ui.ImagePreviewDialog;
 import person.notfresh.noteplus.core.model.Note;
 import person.notfresh.noteplus.manager.NoteListManager;
@@ -1419,6 +1420,9 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             return true;
         } else if (id == R.id.action_timeline) {
             showTimelineDialog();
+            return true;
+        } else if (id == R.id.action_jump_to_date) {
+            showDateJumpDialog();
             return true;
         }
         return super.onOptionsItemSelected(item);
@@ -3395,7 +3399,20 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
             );
         }
     }
-    
+
+    /**
+     * 显示跳转到日期对话框
+     */
+    private void showDateJumpDialog() {
+        if (noteListManager == null) {
+            return;
+        }
+
+        DateJumpDialog dialog = DateJumpDialog.newInstance();
+        dialog.setNoteListManager(noteListManager);
+        dialog.show(getSupportFragmentManager(), "date_jump");
+    }
+
     /**
      * 更新排序按钮的文字
      * 
