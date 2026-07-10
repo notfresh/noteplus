@@ -14,6 +14,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Random;
 import java.util.Set;
@@ -166,6 +167,10 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
     private Button saveButton;
     
     private ListView momentsListView;
+
+    // Current Timeline data (for date jump feature)
+    private ListView currentTimelineListView;
+    private List<person.notfresh.noteplus.core.model.Comment> currentTimelineItems;
 
     private Button addTagButton;
     private ChipGroup tagChipGroup;
@@ -3326,8 +3331,13 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
 
         // 设置跳转日期按钮点击事件
         jumpToDateButton.setOnClickListener(v -> {
-            dialog.dismiss();
-            showDateJumpDialog();
+            // 获取当前 Timeline 的时间范围
+            int selectedPosition = rangeSpinner.getSelectedItemPosition();
+            TimeRangeFilter currentRange = getTimeRangeFromPosition(selectedPosition);
+            boolean descending = sortButton.getText().toString().equals("逆序");
+
+            // 显示日期跳转对话框（不关闭 Timeline）
+            showDateJumpDialogForTimeline(timelineListView, currentRange, descending);
         });
 
         // 设置关闭按钮点击事件
@@ -3418,6 +3428,45 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         DateJumpDialog dialog = DateJumpDialog.newInstance();
         dialog.setNoteListManager(noteListManager);
         dialog.show(getSupportFragmentManager(), "date_jump");
+    }
+
+    /**
+     * 显示日期跳转对话框（用于 Timeline）
+     * @param timelineListView Timeline 的列表视图
+     * @param timeRange 当前 Timeline 的时间范围
+     * @param descending 是否逆序
+     */
+    private void showDateJumpDialogForTimeline(ListView timelineListView, TimeRangeFilter timeRange, boolean descending) {
+        // 获取 Timeline 数据
+        GlobalTimeline globalTimeline = new GlobalTimeline(projectManager);
+        final List<Comment> timelineItems = globalTimeline.loadGlobalTimeline(timeRange, descending);
+
+        DateJumpDialog dialog = DateJumpDialog.newInstance();
+        dialog.setOnDateSelectedListener(date -> {
+            // 在 timelineItems 中找到该日期的第一条记录
+            String dateStr = date.format(DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.US));
+            long targetTimestamp;
+            try {
+                java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US);
+                targetTimestamp = sdf.parse(dateStr).getTime();
+            } catch (Exception e) {
+                return;
+            }
+
+            // 找到该日期在列表中的位置（考虑日期分割线）
+            for (int i = 0; i < timelineItems.size(); i++) {
+                Comment item = timelineItems.get(i);
+                if (item.getItemType() == person.notfresh.noteplus.core.model.TimelineItemType.DATE_DIVIDER) {
+                    continue;
+                }
+                if (item.getTimestamp() >= targetTimestamp && item.getTimestamp() < targetTimestamp + 24 * 60 * 60 * 1000) {
+                    // 滚动到该位置
+                    timelineListView.setSelectionFromTop(i, 0);
+                    return;
+                }
+            }
+        });
+        dialog.show(getSupportFragmentManager(), "date_jump_timeline");
     }
 
     /**
