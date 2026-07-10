@@ -93,6 +93,7 @@ import androidx.appcompat.widget.Toolbar;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
+import androidx.fragment.app.FragmentTransaction;
 
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
@@ -271,8 +272,8 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
 
-        // 初始化项目管理器
-        projectManager = new ProjectContextManager(this);
+        // 初始化项目管理器（使用单例，避免与其它组件读取到不同项目上下文）
+        projectManager = ProjectContextManager.getInstance(this);
         // 获取当前项目的数据库Helper
         dbHelper = projectManager.getCurrentDbHelper();
         
@@ -1426,7 +1427,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         } else if (id == R.id.action_timeline) {
             showTimelineDialog();
             return true;
-        } else if (id == R.id.action_jump_to_date) {
+        } else if (id == R.id.action_jump_to_date_in_project || id == R.id.action_jump_to_date) {
             showDateJumpDialog();
             return true;
         }
@@ -3427,7 +3428,15 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
 
         DateJumpDialog dialog = DateJumpDialog.newInstance();
         dialog.setNoteListManager(noteListManager);
-        dialog.show(getSupportFragmentManager(), "date_jump");
+        dialog.setOnDateSelectedListener(date -> {
+            String dateStr = date.format(DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.US));
+            boolean located = noteListManager.scrollToDate(dateStr);
+            if (!located) {
+                Toast.makeText(this, "该日期没有可跳转的笔记", Toast.LENGTH_SHORT).show();
+            }
+        });
+        // 使用带时间戳的唯一tag确保每次都创建新实例
+        dialog.show(getSupportFragmentManager(), "date_jump_" + System.currentTimeMillis());
     }
 
     /**
@@ -3442,6 +3451,8 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
         final List<Comment> timelineItems = globalTimeline.loadGlobalTimeline(timeRange, descending);
 
         DateJumpDialog dialog = DateJumpDialog.newInstance();
+        dialog.setCrossProject(true);
+        dialog.setTimeRangeFilter(timeRange);
         dialog.setOnDateSelectedListener(date -> {
             // 在 timelineItems 中找到该日期的第一条记录
             String dateStr = date.format(DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.US));
@@ -3466,7 +3477,7 @@ public class MainActivity extends AppCompatActivity implements INoteListCallback
                 }
             }
         });
-        dialog.show(getSupportFragmentManager(), "date_jump_timeline");
+        dialog.show(getSupportFragmentManager(), "date_jump_timeline_" + System.currentTimeMillis());
     }
 
     /**

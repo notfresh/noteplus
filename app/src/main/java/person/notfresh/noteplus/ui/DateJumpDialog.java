@@ -27,6 +27,8 @@ import java.util.Locale;
 import java.util.Set;
 
 import person.notfresh.noteplus.R;
+import person.notfresh.noteplus.core.TimeRangeFilter;
+import person.notfresh.noteplus.core.NoteDataLoader;
 import person.notfresh.noteplus.db.NoteDbHelper;
 import person.notfresh.noteplus.db.ProjectContextManager;
 import person.notfresh.noteplus.manager.NoteListManager;
@@ -44,6 +46,10 @@ public class DateJumpDialog extends DialogFragment {
     private DateTimeFormatter dayFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.US);
     private DateTimeFormatter monthFormatter = DateTimeFormatter.ofPattern("yyyy年MM月", Locale.CHINESE);
 
+    // Cross-project mode for Timeline
+    private boolean isCrossProject = false;
+    private TimeRangeFilter timeRangeFilter = null;
+
     public static DateJumpDialog newInstance() {
         return new DateJumpDialog();
     }
@@ -56,13 +62,25 @@ public class DateJumpDialog extends DialogFragment {
         this.dateSelectedListener = listener;
     }
 
+    public void setCrossProject(boolean crossProject) {
+        this.isCrossProject = crossProject;
+    }
+
+    public void setTimeRangeFilter(TimeRangeFilter filter) {
+        this.timeRangeFilter = filter;
+    }
+
     @NonNull
     @Override
     public Dialog onCreateDialog(Bundle savedInstanceState) {
         AlertDialog.Builder builder = new AlertDialog.Builder(requireContext());
         View view = getLayoutInflater().inflate(R.layout.dialog_date_jump, null);
 
-        dbHelper = ProjectContextManager.getInstance(requireContext()).getCurrentDbHelper();
+        ProjectContextManager manager = ProjectContextManager.getInstance(requireContext());
+        String currentProject = manager.getCurrentProject();
+        android.util.Log.d("DateJumpDialog", "onCreateDialog - 当前项目: " + currentProject + ", isCrossProject: " + isCrossProject);
+
+        dbHelper = manager.getCurrentDbHelper();
 
         loadDatesWithNotes();
         setupCalendarView(view);
@@ -73,25 +91,43 @@ public class DateJumpDialog extends DialogFragment {
     }
 
     private void loadDatesWithNotes() {
+        datesWithNotes.clear();
+
+        if (isCrossProject) {
+            loadCrossProjectDates();
+        } else {
+            loadSingleProjectDates();
+        }
+    }
+
+    private void loadSingleProjectDates() {
         android.database.Cursor cursor = null;
         try {
             android.database.sqlite.SQLiteDatabase db = dbHelper.getReadableDatabase();
-            android.util.Log.d("DateJumpDialog", "数据库路径: " + db.getPath());
+            android.util.Log.d("DateJumpDialog", "单项目模式 - 数据库路径: " + db.getPath() + ", 项目: " + ProjectContextManager.getInstance(requireContext()).getCurrentProject());
 
-            // 先查询总记录数
-            android.database.Cursor countCursor = db.rawQuery("SELECT COUNT(*) FROM notes", null);
-            if (countCursor.moveToFirst()) {
-                android.util.Log.d("DateJumpDialog", "notes 表总记录数: " + countCursor.getInt(0));
+            String query;
+            String[] args;
+
+            if (timeRangeFilter != null) {
+                // 使用时间范围过滤
+                java.util.Calendar calendar = java.util.Calendar.getInstance();
+                long currentTime = calendar.getTimeInMillis();
+                calendar.add(java.util.Calendar.DAY_OF_YEAR, -timeRangeFilter.getDays());
+                long startTime = calendar.getTimeInMillis();
+
+                query = "SELECT DISTINCT date(timestamp/1000, 'unixepoch') FROM notes WHERE timestamp >= ?";
+                args = new String[]{String.valueOf(startTime)};
+                android.util.Log.d("DateJumpDialog", "时间范围过滤: " + timeRangeFilter.getDays() + "天，起始时间: " + startTime);
+            } else {
+                query = "SELECT DISTINCT date(timestamp/1000, 'unixepoch') FROM notes";
+                args = null;
             }
-            countCursor.close();
 
-            cursor = db.rawQuery(
-                "SELECT DISTINCT date(timestamp/1000, 'unixepoch') FROM notes",
-                null);
+            cursor = db.rawQuery(query, args);
             android.util.Log.d("DateJumpDialog", "查询到 " + cursor.getCount() + " 条日期记录");
             while (cursor.moveToNext()) {
                 String date = cursor.getString(0);
-                android.util.Log.d("DateJumpDialog", "日期: " + date);
                 if (date != null) {
                     datesWithNotes.add(date);
                 }
@@ -104,6 +140,61 @@ public class DateJumpDialog extends DialogFragment {
                 cursor.close();
             }
         }
+    }
+
+    private void loadCrossProjectDates() {
+        android.util.Log.d("DateJumpDialog", "跨项目模式 - 遍历所有项目数据库");
+
+        ProjectContextManager projectManager = ProjectContextManager.getInstance(requireContext());
+        java.util.List<String> projects = projectManager.getProjectList();
+        java.util.List<String> recycledProjects = projectManager.getRecycledProjects();
+
+        for (String projectName : projects) {
+            if (recycledProjects.contains(projectName)) {
+                android.util.Log.d("DateJumpDialog", "跳过回收站项目: " + projectName);
+                continue;
+            }
+
+            try {
+                NoteDbHelper projectDbHelper = projectManager.getDbHelperForProject(projectName);
+                if (projectDbHelper == null) {
+                    continue;
+                }
+
+                android.database.sqlite.SQLiteDatabase db = projectDbHelper.getReadableDatabase();
+                android.util.Log.d("DateJumpDialog", "项目: " + projectName + ", 数据库: " + db.getPath());
+
+                String query;
+                String[] args;
+
+                if (timeRangeFilter != null) {
+                    java.util.Calendar calendar = java.util.Calendar.getInstance();
+                    long currentTime = calendar.getTimeInMillis();
+                    calendar.add(java.util.Calendar.DAY_OF_YEAR, -timeRangeFilter.getDays());
+                    long startTime = calendar.getTimeInMillis();
+
+                    query = "SELECT DISTINCT date(timestamp/1000, 'unixepoch') FROM notes WHERE timestamp >= ?";
+                    args = new String[]{String.valueOf(startTime)};
+                } else {
+                    query = "SELECT DISTINCT date(timestamp/1000, 'unixepoch') FROM notes";
+                    args = null;
+                }
+
+                android.database.Cursor cursor = db.rawQuery(query, args);
+                android.util.Log.d("DateJumpDialog", "项目 " + projectName + " 查询到 " + cursor.getCount() + " 条日期记录");
+                while (cursor.moveToNext()) {
+                    String date = cursor.getString(0);
+                    if (date != null) {
+                        datesWithNotes.add(date);
+                    }
+                }
+                cursor.close();
+            } catch (Exception e) {
+                android.util.Log.e("DateJumpDialog", "加载项目 " + projectName + " 日期失败", e);
+            }
+        }
+
+        android.util.Log.d("DateJumpDialog", "跨项目 datesWithNotes 总大小: " + datesWithNotes.size());
     }
 
     private void setupCalendarView(View view) {
@@ -140,6 +231,9 @@ public class DateJumpDialog extends DialogFragment {
 
         calendarView.setup(firstMonth, lastMonth, DayOfWeek.MONDAY);
         calendarView.scrollToMonth(currentMonth);
+
+        // 强制刷新日历视图以显示新数据
+        calendarView.notifyCalendarChanged();
 
         // 日期单元格绑定
         calendarView.setDayBinder(new DayBinder<DayViewContainer>() {

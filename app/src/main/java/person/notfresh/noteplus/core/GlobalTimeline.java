@@ -118,11 +118,56 @@ public class GlobalTimeline {
                 android.util.Log.e("Timeline", "Timeline: 加载项目时间线失败: " + projectName, e);
             }
         }
+
+        return finalizeTimeline(globalTimeline, descending);
+    }
+
+    /**
+     * 加载指定项目的时间线
+     *
+     * @param projectName 项目名，传 null 或空字符串时使用当前项目
+     * @param timeRange 时间范围枚举
+     * @param descending true表示逆序（最新的在前），false表示顺序（最旧的在前）
+     * @return 指定项目的时间线数据
+     */
+    public List<Comment> loadProjectTimeline(String projectName, TimeRangeFilter timeRange, boolean descending) {
+        List<Comment> projectTimeline = new ArrayList<>();
+
+        String targetProject = projectName;
+        if (targetProject == null || targetProject.trim().isEmpty()) {
+            targetProject = projectManager.getCurrentProject();
+        }
+        if (targetProject == null || targetProject.trim().isEmpty()) {
+            return projectTimeline;
+        }
+
+        List<String> recycledProjects = projectManager.getRecycledProjects();
+        if (recycledProjects.contains(targetProject)) {
+            android.util.Log.d("Timeline", "Timeline: 当前项目在回收站中，跳过: " + targetProject);
+            return projectTimeline;
+        }
+
+        try {
+            NoteDbHelper dbHelper = projectManager.getDbHelperForProject(targetProject);
+            if (dbHelper == null) {
+                return projectTimeline;
+            }
+
+            NoteDataLoader loader = new NoteDataLoader(dbHelper, targetProject);
+            projectTimeline.addAll(loader.loadFullTimelineByTimeRange(timeRange, descending));
+        } catch (Exception e) {
+            android.util.Log.e("Timeline", "Timeline: 加载当前项目时间线失败: " + targetProject, e);
+        }
+
+        return finalizeTimeline(projectTimeline, descending);
+    }
+
+    private List<Comment> finalizeTimeline(List<Comment> timeline, boolean descending) {
         
         // 对所有项目的时间线数据进行统一排序
         // 注意：虽然每个项目内部已经排序，但跨项目需要重新排序
         // 排序规则：先按时间排序（不考虑置顶），置顶的Note会在后面复制到最前面
-        Collections.sort(globalTimeline, new Comparator<Comment>() {
+        Collections.sort(timeline, new Comparator<Comment>() {
             @Override
             public int compare(Comment a, Comment b) {
                 // 按时间排序（不考虑置顶状态）
@@ -139,7 +184,7 @@ public class GlobalTimeline {
         // 收集所有置顶的Note，并创建副本添加到列表最前面
         // 这样置顶的Note会同时出现在置顶区域和原时间位置
         List<Comment> pinnedNotes = new ArrayList<>();
-        for (Comment item : globalTimeline) {
+        for (Comment item : timeline) {
             // 只处理Note类型且置顶的项
             if (item.getItemType() == TimelineItemType.NOTE && item.isPinned()) {
                 // 创建置顶Note的副本
@@ -162,12 +207,12 @@ public class GlobalTimeline {
         });
         
         // 将置顶Note副本插入到列表最前面
-        globalTimeline.addAll(0, pinnedNotes);
+        timeline.addAll(0, pinnedNotes);
         
         // 插入日期分割线标记
-        globalTimeline = insertDateDividers(globalTimeline, descending);
+        timeline = insertDateDividers(timeline, descending);
         
-        return globalTimeline;
+        return timeline;
     }
     
     /**
