@@ -28,6 +28,7 @@ import java.util.Set;
 
 import person.notfresh.noteplus.R;
 import person.notfresh.noteplus.db.NoteDbHelper;
+import person.notfresh.noteplus.db.ProjectContextManager;
 import person.notfresh.noteplus.manager.NoteListManager;
 
 public class DateJumpDialog extends DialogFragment {
@@ -61,7 +62,7 @@ public class DateJumpDialog extends DialogFragment {
         AlertDialog.Builder builder = new AlertDialog.Builder(requireContext());
         View view = getLayoutInflater().inflate(R.layout.dialog_date_jump, null);
 
-        dbHelper = NoteDbHelper.getInstance(requireContext());
+        dbHelper = ProjectContextManager.getInstance(requireContext()).getCurrentDbHelper();
 
         loadDatesWithNotes();
         setupCalendarView(view);
